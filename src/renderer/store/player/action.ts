@@ -173,12 +173,13 @@ const setPlayerMusicInfo = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
  * @param musicInfo 歌曲信息
  * @param isTempPlay 是否临时播放
  */
-export const setPlayMusicInfo = (listId: string | null, musicInfo: LX.Download.ListItem | LX.Music.MusicInfo | null, isTempPlay: boolean = false) => {
+export const setPlayMusicInfo = (listId: string | null, musicInfo: LX.Download.ListItem | LX.Music.MusicInfo | null, isTempPlay: boolean = false, alternativeMusicInfos?: LX.Music.MusicInfoOnline[], reason: LX.Player.MusicChangeReason = 'user') => {
   musicInfo = toRaw(musicInfo)
 
   playMusicInfo.listId = listId
   playMusicInfo.musicInfo = musicInfo
   playMusicInfo.isTempPlay = isTempPlay
+  playMusicInfo.alternativeMusicInfos = alternativeMusicInfos?.map(info => toRaw(info))
 
   setPlayerMusicInfo(musicInfo)
 
@@ -193,8 +194,19 @@ export const setPlayMusicInfo = (listId: string | null, musicInfo: LX.Download.L
 
     playInfo.playIndex = playIndex
     playInfo.playerPlayIndex = playerPlayIndex
-    window.app_event.musicToggled()
+    window.app_event.musicToggled(reason)
   }
+}
+
+/** 同曲换源只替换列表中的播放身份，保留音频、进度、歌词和电台锚点。 */
+export const replacePlayMusicInfo = (listId: string, original: LX.Music.MusicInfoOnline, replacement: LX.Music.MusicInfoOnline) => {
+  if (playMusicInfo.listId !== listId || playMusicInfo.musicInfo !== original) return
+  playMusicInfo.musicInfo = toRaw(replacement)
+  for (const item of playedList) {
+    if (item.listId === listId && item.musicInfo.id === original.id) item.musicInfo = toRaw(replacement)
+  }
+  setMusicInfo({ id: replacement.id, name: replacement.name, singer: replacement.singer, album: replacement.meta.albumName })
+  updatePlayIndex()
 }
 
 /**
@@ -233,8 +245,8 @@ export const addTempPlayList = (list: LX.Player.TempPlayListItem[]) => {
     }
     return true
   })
-  if (topList.length) arrUnshift(tempPlayList, topList.map(({ musicInfo, listId }) => ({ musicInfo, listId, isTempPlay: true })))
-  if (bottomList.length) arrPush(tempPlayList, bottomList.map(({ musicInfo, listId }) => ({ musicInfo, listId, isTempPlay: true })))
+  if (topList.length) arrUnshift(tempPlayList, topList.map(({ isTop, ...item }) => ({ ...item, isTempPlay: true })))
+  if (bottomList.length) arrPush(tempPlayList, bottomList.map(({ isTop, ...item }) => ({ ...item, isTempPlay: true })))
 
   if (!playMusicInfo.musicInfo) void playNext()
 }

@@ -113,6 +113,8 @@ declare namespace LX {
     interface MusicUrlInfo {
       id: string
       url: string
+      /** 原条目缓存了换源 URL 时，保留实际取流的提供方条目。 */
+      musicInfo?: MusicInfoOnline
     }
 
     interface MusicInfoOtherSourceSave {

@@ -1,5 +1,7 @@
 declare namespace LX {
   namespace Player {
+    type MusicChangeReason = 'user' | 'ended' | 'error' | 'removed'
+
     interface ProgressBarOptions {
       progress: number
       mode?: Electron.ProgressBarOptions['mode']

@@ -2,6 +2,7 @@
 import { removeSelectModeListener, sendCloseSelectMode, sendSelectMode } from '@main/modules/winMain'
 import { getUserSpace, getUserConfig } from '../../../user'
 import { buildUserListInfoFull, getLocalListData, setLocalListData } from '@main/modules/sync/listEvent'
+import { fillUserListMeta } from './listMetaFill'
 import { SYNC_CLOSE_CODE } from '@common/constants_sync'
 // import { LIST_IDS } from '@common/constants'
 
@@ -151,6 +152,8 @@ const mergeList = (socket: LX.Sync.Server.Socket, sourceListData: LX.Sync.List.L
     const sourceList = userListDataObj.get(list.id)
     if (sourceList) {
       sourceList.list = handleMergeList(sourceList.list, list.list, addMusicLocationType)
+      // 首次同步（无快照）：来源侧未携带元数据（旧版本设备）时保留本地值，避免封面/简介/作者被 NULL 覆盖
+      fillUserListMeta(sourceList, list)
 
       const sourceUpdateTime = sourceList?.locationUpdateTime ?? 0
       if (targetUpdateTime >= sourceUpdateTime) return
@@ -182,7 +185,12 @@ const overwriteList = (sourceListData: LX.Sync.List.ListData, targetListData: LX
   newListData.userList = [...sourceListData.userList]
 
   targetListData.userList.forEach((list, index) => {
-    if (userListDataObj.has(list.id)) return
+    const sourceList = userListDataObj.get(list.id)
+    if (sourceList) {
+      // 首次同步（无快照）：来源侧未携带元数据（旧版本设备）时保留本地值
+      fillUserListMeta(sourceList, list)
+      return
+    }
     if (list?.locationUpdateTime) {
       newListData.userList.splice(index, 0, list)
     } else {
@@ -322,6 +330,10 @@ const selectData = <T>(snapshot: T | null, local: T, remote: T): T => {
     // ? (snapshot == remote ? snapshot as T : remote)
     : local
 }
+// 远端未携带元数据（旧版本设备）或为空字符串（无封面/简介/作者）时保留本地值，避免同步后元数据丢失
+const mergeListField = <T>(snapshot: T | null, local: T | null, remote: T | null): T | null => {
+  return remote == null || remote == '' ? (local ?? null) : selectData(snapshot, local, remote)
+}
 const handleMergeListDataFromSnapshot = async(socket: LX.Sync.Server.Socket, snapshot: LX.Sync.List.ListData) => {
   if (await checkListLatest(socket)) return
 
@@ -354,13 +366,16 @@ const handleMergeListDataFromSnapshot = async(socket: LX.Sync.Server.Socket, sna
     const remoteList = remoteUserListData.get(list.id)
     let newList: LX.List.UserListInfoFull
     if (remoteList) {
-      const snapshotList = snapshotUserListData.get(list.id) ?? { name: null, source: null, sourceListId: null, list: [] }
+      const snapshotList = snapshotUserListData.get(list.id) ?? { name: null, source: null, sourceListId: null, cover: null, desc: null, author: null, list: [] }
       newList = buildUserListInfoFull({
         id: list.id,
         name: selectData(snapshotList.name, list.name, remoteList.name),
         source: selectData(snapshotList.source, list.source, remoteList.source),
         sourceListId: selectData(snapshotList.sourceListId, list.sourceListId, remoteList.sourceListId),
         locationUpdateTime: list.locationUpdateTime,
+        cover: mergeListField(snapshotList.cover, list.cover, remoteList.cover),
+        desc: mergeListField(snapshotList.desc, list.desc, remoteList.desc),
+        author: mergeListField(snapshotList.author, list.author, remoteList.author),
         list: mergeListDataFromSnapshot(list.list, remoteList.list, snapshotList.list, addMusicLocationType),
       })
     } else {

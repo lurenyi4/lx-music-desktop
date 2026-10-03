@@ -6,6 +6,7 @@ import { hasDislike } from '@renderer/core/dislikeList'
 export default ({
   props,
   assertApiSupport,
+  assertPlaybackSupport,
   emit,
 
   handleShowDownloadModal,
@@ -80,7 +81,7 @@ export default ({
     if (props.checkApiSource) {
       itemMenuControl.playLater =
       itemMenuControl.play =
-        itemMenuControl.download
+        assertPlaybackSupport(musicInfo.source)
     }
 
     menuLocation.x = event.pageX

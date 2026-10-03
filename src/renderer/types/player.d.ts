@@ -14,6 +14,10 @@ declare namespace LX {
         * 是否属于 “稍后播放”
         */
       isTempPlay: boolean
+      /** 推荐实际入队时的会话代际；手动入队不携带。 */
+      recommendationSessionId?: number
+      /** 推荐已知的备用平台歌曲，只随播放上下文传递。 */
+      alternativeMusicInfos?: LX.Music.MusicInfoOnline[]
     }
 
     interface PlayInfo {
@@ -44,6 +48,9 @@ declare namespace LX {
        * 是否添加到列表顶部
        */
       isTop?: boolean
+      /** 推荐实际入队时的会话代际；手动入队不携带。 */
+      recommendationSessionId?: number
+      alternativeMusicInfos?: LX.Music.MusicInfoOnline[]
     }
 
     interface SavedPlayInfo {

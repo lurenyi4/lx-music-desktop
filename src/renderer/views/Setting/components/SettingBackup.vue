@@ -42,6 +42,7 @@ import { getListMusics, overwriteListFull, overwriteListMusics } from '@renderer
 import { LIST_IDS } from '@common/constants'
 import { defaultList, loveList, userLists } from '@renderer/store/list/state'
 import { appSetting, updateSetting } from '@renderer/store/setting'
+import { stripSensitiveSetting } from '@renderer/utils/sensitiveSetting'
 import migrateSetting from '@common/utils/migrateSetting'
 
 
@@ -99,6 +100,10 @@ export default {
           const targetList = allLists.find(l => l.id == list.id)
           if (targetList) {
             targetList.list = filterMusicList(list.list).map(m => fixNewMusicInfoQuality(m))
+            // 旧备份可能没有元数据字段；字段存在时才覆盖，避免旧格式导入抹掉本地信息。
+            if (Object.prototype.hasOwnProperty.call(list, 'cover')) targetList.cover = list.cover ?? null
+            if (Object.prototype.hasOwnProperty.call(list, 'desc')) targetList.desc = list.desc ?? null
+            if (Object.prototype.hasOwnProperty.call(list, 'author')) targetList.author = list.author ?? null
           } else {
             allLists.push({
               name: list.name,
@@ -107,6 +112,9 @@ export default {
               source: list.source,
               sourceListId: list.sourceListId,
               locationUpdateTime: list.locationUpdateTime ?? null,
+              cover: list.cover ?? null,
+              desc: list.desc ?? null,
+              author: list.author ?? null,
             })
           }
         } catch (err) {
@@ -175,7 +183,7 @@ export default {
     const exportAllData = async(path) => {
       let allData = {
         type: 'allData_v2',
-        setting: { ...appSetting },
+        setting: stripSensitiveSetting(appSetting),
         playList: await getAllLists(),
       }
       void window.lx.worker.main.saveLxConfigFile(path, allData)
@@ -193,7 +201,7 @@ export default {
     const exportSetting = (path) => {
       const data = {
         type: 'setting_v2',
-        data: { ...appSetting },
+        data: stripSensitiveSetting(appSetting),
       }
       void window.lx.worker.main.saveLxConfigFile(path, data)
     }

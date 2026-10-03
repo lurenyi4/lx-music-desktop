@@ -7,9 +7,9 @@ import {
   createUserList as createUserListAction,
   addListMusics as addListMusicsAction,
   moveListMusics as moveListMusicsAction,
+  unwrapMusicInfos,
   overwriteListMusics,
 } from '@renderer/store/list/listManage'
-import { toRaw } from '@common/utils/vueTools'
 import { LIST_IDS } from '@common/constants'
 
 export const registerAction = (onListChanged: (listIds: string[]) => void) => {
@@ -38,7 +38,7 @@ export const setUpdateTime = (id: string, time: string) => {
 export const addListMusics = async(id: string, musicInfos: LX.Music.MusicInfo[], addMusicLocationType?: LX.AddMusicLocationType) => {
   return addListMusicsAction({
     id,
-    musicInfos: toRaw(musicInfos),
+    musicInfos: unwrapMusicInfos(musicInfos),
     addMusicLocationType: addMusicLocationType ?? appSetting['list.addMusicLocationType'],
   })
 }
@@ -47,18 +47,21 @@ export const moveListMusics = async(fromId: string, toId: string, musicInfos: LX
   return moveListMusicsAction({
     fromId,
     toId,
-    musicInfos: toRaw(musicInfos),
+    musicInfos: unwrapMusicInfos(musicInfos),
     addMusicLocationType: addMusicLocationType ?? appSetting['list.addMusicLocationType'],
   })
 }
 
-export const createUserList = async({ name, id = `userlist_${Date.now()}`, list = [], source, sourceListId, position = -1 }: {
+export const createUserList = async({ name, id = `userlist_${Date.now()}`, list = [], source, sourceListId, position = -1, cover, desc, author }: {
   name?: string
   id?: string
   list?: LX.Music.MusicInfo[]
   source?: LX.OnlineSource
   sourceListId?: string
   position?: number
+  cover?: string | null
+  desc?: string | null
+  author?: string | null
 }) => {
   await createUserListAction({
     position: position < 0 ? userLists.length : position,
@@ -69,6 +72,9 @@ export const createUserList = async({ name, id = `userlist_${Date.now()}`, list 
         source,
         sourceListId,
         locationUpdateTime: position < 0 ? null : Date.now(),
+        cover,
+        desc,
+        author,
       },
     ],
   })
