@@ -2,6 +2,7 @@
 //   const filePath = path.join(appSetting['download.savePath'], targetSong.metadata.fileName)
 //   // console.log(filePath)
 
+import { requestMsg } from '@renderer/utils/message'
 import {
   getMusicUrl as getOnlineMusicUrl,
   getPicUrl as getOnlinePicUrl,
@@ -38,6 +39,17 @@ export const getMusicUrl = async({
   onResolvedMusicInfo?: (musicInfo: LX.Music.MusicInfoOnline) => void
   alternativeMusicInfos?: LX.Music.MusicInfoOnline[]
 }): Promise<string> => {
+  // Shared by playback and preloading. A previous rescue never becomes the next preference.
+  const preferred = ('progress' in musicInfo ? musicInfo.metadata.musicInfo : musicInfo).meta.toggleMusicInfo
+  if (preferred) {
+    try {
+      return await getOnlineMusicUrl({ musicInfo: preferred, quality, isRefresh, allowToggleSource: false, onResolvedMusicInfo, onToggleApiSource })
+    } catch (err) {
+      if (allowToggleSource === false || (err instanceof Error && err.message === requestMsg.cancelRequest)) throw err
+      onToggleSource?.()
+      return getOnlineMusicUrl({ musicInfo: preferred, quality, isRefresh, allowToggleSource: true, onResolvedMusicInfo, onToggleSource, onToggleApiSource, alternativeMusicInfos })
+    }
+  }
   if ('progress' in musicInfo) {
     return getDownloadMusicUrl({ musicInfo, isRefresh, onToggleSource, onToggleApiSource, allowToggleSource, onResolvedMusicInfo })
   } else if (musicInfo.source == 'local') {
@@ -58,6 +70,8 @@ export const getPicPath = async({
   isRefresh?: boolean
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
 }): Promise<string> => {
+  const preferred = ('progress' in musicInfo ? musicInfo.metadata.musicInfo : musicInfo).meta.toggleMusicInfo
+  if (preferred) return getOnlinePicUrl({ musicInfo: preferred, isRefresh, onToggleSource })
   if ('progress' in musicInfo) {
     return getDownloadPicUrl({ musicInfo, isRefresh, listId, onToggleSource })
   } else if (musicInfo.source == 'local') {
@@ -76,6 +90,8 @@ export const getLyricInfo = async({
   isRefresh?: boolean
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
 }): Promise<LX.Player.LyricInfo> => {
+  const preferred = ('progress' in musicInfo ? musicInfo.metadata.musicInfo : musicInfo).meta.toggleMusicInfo
+  if (preferred) return getOnlineLyricInfo({ musicInfo: preferred, isRefresh, onToggleSource })
   if ('progress' in musicInfo) {
     return getDownloadLyricInfo({ musicInfo, isRefresh, onToggleSource })
   } else if (musicInfo.source == 'local') {

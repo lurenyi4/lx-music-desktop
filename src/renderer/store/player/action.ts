@@ -141,6 +141,9 @@ export const resetPlayerMusicInfo = () => {
 
 const setPlayerMusicInfo = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem | null) => {
   if (musicInfo) {
+    const savedId = musicInfo.id
+    const original = 'progress' in musicInfo ? musicInfo.metadata.musicInfo : musicInfo
+    if (original.meta.toggleMusicInfo) musicInfo = { ...original.meta.toggleMusicInfo, id: savedId }
     setMusicInfo('progress' in musicInfo ? {
       id: musicInfo.id,
       pic: musicInfo.metadata.musicInfo.meta.picUrl,
@@ -177,6 +180,8 @@ export const setPlayMusicInfo = (listId: string | null, musicInfo: LX.Download.L
   musicInfo = toRaw(musicInfo)
 
   playMusicInfo.listId = listId
+  playMusicInfo.resolvedMusicInfo = undefined
+  playMusicInfo.versionNotice = undefined
   playMusicInfo.musicInfo = musicInfo
   playMusicInfo.isTempPlay = isTempPlay
   playMusicInfo.alternativeMusicInfos = alternativeMusicInfos?.map(info => toRaw(info))

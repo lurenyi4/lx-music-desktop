@@ -54,6 +54,8 @@ export const playMusicInfo = shallowReactive<{
    */
   isTempPlay: boolean
   alternativeMusicInfos?: LX.Music.MusicInfoOnline[]
+  resolvedMusicInfo?: LX.Music.MusicInfoOnline
+  versionNotice?: string
 }>({
   listId: null,
   musicInfo: null,

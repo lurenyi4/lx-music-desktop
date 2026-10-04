@@ -13,8 +13,12 @@ transition(enter-active-class="animated slideInRight" leave-active-class="animat
           img(v-if="musicInfo.pic" :class="$style.img" :src="musicInfo.pic")
           div.description(:class="['scroll', $style.description]")
             p {{ $t('player__music_name') }}{{ musicInfo.name }}
-            p {{ $t('player__music_singer') }}{{ musicInfo.singer }}
-            p(v-if="musicInfo.album") {{ $t('player__music_album') }}{{ musicInfo.album }}
+            p
+              | {{ $t('player__music_singer') }}
+              CatalogLink(v-if="playMusicInfo.musicInfo" kind="artist" :music="playMusicInfo.musicInfo.metadata ? playMusicInfo.musicInfo.metadata.musicInfo : playMusicInfo.musicInfo") {{ musicInfo.singer }}
+            p(v-if="musicInfo.album")
+              | {{ $t('player__music_album') }}
+              CatalogLink(v-if="playMusicInfo.musicInfo" kind="album" :music="playMusicInfo.musicInfo.metadata ? playMusicInfo.musicInfo.metadata.musicInfo : playMusicInfo.musicInfo") {{ musicInfo.album }}
 
       transition(enter-active-class="animated fadeIn" leave-active-class="animated fadeOut")
         LyricPlayer(v-if="visibled")
@@ -41,6 +45,7 @@ import {
   setShowPlayLrcSelectContentLrc,
 } from '@renderer/store/player/action'
 import LyricPlayer from './LyricPlayer.vue'
+import CatalogLink from '@renderer/components/common/CatalogLink.vue'
 import PlayBar from './PlayBar.vue'
 import MusicComment from './components/MusicComment/index.vue'
 import ControlBtnsLeftHeader from './ControlBtnsLeftHeader.vue'
@@ -55,6 +60,7 @@ export default {
     ControlBtnsLeftHeader,
     ControlBtnsRightHeader,
     LyricPlayer,
+    CatalogLink,
     PlayBar,
     MusicComment,
   },

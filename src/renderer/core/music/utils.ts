@@ -322,7 +322,7 @@ export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggl
   // 主源音质仅用于查询缓存，不能据此淘汰提供方；取流时各音源独立选档。
   const itemQuality = quality ?? getPlayQuality(appSetting['player.playQuality'], musicInfo)
   const cached = isRefresh ? null : await getMusicUrlInfo(musicInfo, itemQuality)
-  if (cached?.musicInfo) return { url: cached.url, musicInfo: cached.musicInfo, quality: itemQuality, isFromCache: true }
+  if (cached?.musicInfo?.id === musicInfo.id) return { url: cached.url, musicInfo: cached.musicInfo, quality: itemQuality, isFromCache: true }
 
   // 提供方内层：主源 → 备源按序轮换；穷尽后递归下一个候选提供方
   try {

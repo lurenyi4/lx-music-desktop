@@ -4,6 +4,7 @@ import {
   getList,
   clearPlayedList,
   clearTempPlayeList,
+  addTempPlayList,
   setPlayMusicInfo,
   addPlayedList,
   setMusicInfo,
@@ -74,30 +75,19 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
   setAllStatus(window.i18n.t('player__getting_url'))
   if (appSetting['player.autoSkipOnError']) addLoadTimeout()
 
-  // const type = getPlayType(appSetting['player.highQuality'], musicInfo)
-  let toggleMusicInfo = ('progress' in musicInfo ? musicInfo.metadata.musicInfo : musicInfo).meta.toggleMusicInfo
-
-  return (toggleMusicInfo ? getMusicUrl({
-    musicInfo: toggleMusicInfo,
+  return getMusicUrl({
+    musicInfo,
     isRefresh,
-    allowToggleSource: false,
+    alternativeMusicInfos: musicInfo === playMusicInfo.musicInfo ? playMusicInfo.alternativeMusicInfos : undefined,
     onResolvedMusicInfo,
-  }) : Promise.reject(new Error('not found'))).catch(async() => {
-    if (isStaleMusicUrlRequest(musicInfo, requestId)) return null
-    return getMusicUrl({
-      musicInfo,
-      isRefresh,
-      alternativeMusicInfos: musicInfo === playMusicInfo.musicInfo ? playMusicInfo.alternativeMusicInfos : undefined,
-      onResolvedMusicInfo,
-      onToggleSource(mInfo) {
-        if (isStaleMusicUrlRequest(musicInfo, requestId)) return
-        setAllStatus(window.i18n.t('toggle_source_try'))
-      },
-      onToggleApiSource() {
-        if (isStaleMusicUrlRequest(musicInfo, requestId)) return
-        setAllStatus(window.i18n.t('toggle_api_source_try'))
-      },
-    })
+    onToggleSource(mInfo) {
+      if (isStaleMusicUrlRequest(musicInfo, requestId)) return
+      setAllStatus(window.i18n.t('toggle_source_try'))
+    },
+    onToggleApiSource() {
+      if (isStaleMusicUrlRequest(musicInfo, requestId)) return
+      setAllStatus(window.i18n.t('toggle_api_source_try'))
+    },
   }).then(url => {
     if (isStaleMusicUrlRequest(musicInfo, requestId)) return null
 
@@ -124,7 +114,7 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
   void getMusicPlayUrl(musicInfo, requestId, isRefresh, false, info => { resolvedMusicInfo = info }).then((url) => {
     if (!url || isStaleMusicUrlRequest(musicInfo, requestId)) return
     setResource(url)
-    // 先接受本次 URL，再写回身份；否则取流的过期检查会误丢弃刚换源成功的结果。
+    // Record the actual source without replacing the saved song or manual version.
     if (resolvedMusicInfo && 'source' in musicInfo && musicInfo.source !== 'local') {
       void writebackToggleMusicInfo(musicInfo, resolvedMusicInfo).catch(err => { console.log(err) })
     }
@@ -333,7 +323,6 @@ export const getNextPlayMusicInfo = async(): Promise<LX.Player.PlayMusicInfo | n
 
   if (!filteredList.length) return null
   // let currentIndex: number = filteredList.indexOf(currentList[playInfo.playerPlayIndex])
-  if (playerIndex == -1 && filteredList.length) playerIndex = 0
   let nextIndex = playerIndex
 
   let togglePlayMethod = appSetting['player.togglePlayMethod']
@@ -348,6 +337,7 @@ export const getNextPlayMusicInfo = async(): Promise<LX.Player.PlayMusicInfo | n
       nextIndex = playerIndex === filteredList.length - 1 ? -1 : playerIndex + 1
       break
     case 'singleLoop':
+      nextIndex = Math.max(0, playerIndex)
       break
     default:
       return null
@@ -385,6 +375,24 @@ export const playMusicInfoNow = (musicInfo: LX.Music.MusicInfo | LX.Download.Lis
   setPlayMusicInfo(listId, musicInfo, true, alternativeMusicInfos)
   handlePlay()
 }
+/** Restart a manually selected version without discarding the user's pending queue. */
+export const restartSelectedVersion = (listId: string, musicInfo: LX.Music.MusicInfo) => {
+  if (playMusicInfo.listId !== listId || playMusicInfo.musicInfo?.id !== musicInfo.id) return
+  setPlayMusicInfo(listId, musicInfo, playMusicInfo.isTempPlay, playMusicInfo.alternativeMusicInfos)
+  handlePlay()
+}
+
+/** An explicit selection replaces the pending queue and plays in visible list order. */
+export const playMusicSelection = (list: Array<LX.Music.MusicInfo | LX.Download.ListItem>, listId: string | null) => {
+  if (!list.length) return
+  clearTempPlayeList()
+  clearPlayedList()
+  setPlayListId(null)
+  setPlayMusicInfo(listId, list[0], true)
+  addTempPlayList(list.slice(1).map(musicInfo => ({ listId, musicInfo })))
+  handlePlay()
+}
+
 /**
  * 下一曲
  * @param isAutoToggle 是否自动切换
@@ -460,7 +468,6 @@ export const playNext = async(isAutoToggle = false, reason: LX.Player.MusicChang
     return
   }
   // let currentIndex: number = filteredList.indexOf(currentList[playInfo.playerPlayIndex])
-  if (playerIndex == -1 && filteredList.length) playerIndex = 0
   let nextIndex = playerIndex
 
   let togglePlayMethod = appSetting['player.togglePlayMethod']
@@ -483,6 +490,7 @@ export const playNext = async(isAutoToggle = false, reason: LX.Player.MusicChang
       nextIndex = playerIndex === filteredList.length - 1 ? -1 : playerIndex + 1
       break
     case 'singleLoop':
+      nextIndex = Math.max(0, playerIndex)
       break
     default:
       nextIndex = -1

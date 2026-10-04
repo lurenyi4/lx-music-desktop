@@ -4,7 +4,7 @@ import { getListMusics, addListMusics } from '@renderer/store/list/action'
 import { addTempPlayList } from '@renderer/store/player/action'
 import { appSetting } from '@renderer/store/setting'
 import { type Ref } from '@common/utils/vueTools'
-import { playList } from '@renderer/core/player'
+import { playList, playMusicSelection } from '@renderer/core/player'
 import { LIST_IDS } from '@common/constants'
 
 export default ({ selectedList, props, removeAllSelect, emit }: {
@@ -19,23 +19,25 @@ export default ({ selectedList, props, removeAllSelect, emit }: {
   let clickIndex = -1
 
   const handlePlayMusic = async(index: number, single: boolean) => {
-    let targetSong = props.list[index]
-    const defaultListMusics = await getListMusics(defaultList.id)
     if (selectedList.value.length && !single) {
-      await addListMusics(defaultList.id, [...selectedList.value])
+      const ids = new Set(selectedList.value.map(item => item.id))
+      const selection = props.list.filter(item => ids.has(item.id))
+      await addListMusics(defaultList.id, selection)
+      playMusicSelection(selection, defaultList.id)
       removeAllSelect()
-    } else {
-      await addListMusics(defaultList.id, [targetSong])
+      return
     }
-    let targetIndex = defaultListMusics.findIndex(s => s.id === targetSong.id)
-    if (targetIndex > -1) {
-      playList(defaultList.id, targetIndex)
-    }
+    const targetSong = props.list[index]
+    if (!targetSong) return
+    await addListMusics(defaultList.id, [targetSong])
+    const defaultListMusics = await getListMusics(defaultList.id)
+    const targetIndex = defaultListMusics.findIndex(s => s.id === targetSong.id)
+    if (targetIndex > -1) playList(defaultList.id, targetIndex)
   }
 
   const handlePlayMusicLater = (index: number, single: boolean) => {
     if (selectedList.value.length && !single) {
-      addTempPlayList(selectedList.value.map(s => ({ listId: LIST_IDS.PLAY_LATER, musicInfo: s })))
+      addTempPlayList(props.list.filter(item => selectedList.value.some(selected => selected.id === item.id)).map(s => ({ listId: LIST_IDS.PLAY_LATER, musicInfo: s })))
       removeAllSelect()
     } else {
       addTempPlayList([{ listId: LIST_IDS.PLAY_LATER, musicInfo: props.list[index] }])

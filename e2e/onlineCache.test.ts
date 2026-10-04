@@ -43,13 +43,13 @@ beforeEach(() => {
   mocks.fetch.mockResolvedValue({ url: 'replacement-url', quality: '128k', musicInfo: replacement, isFromCache: false })
 })
 
-it('预加载后从持久缓存播放，仍报告实际取流条目', async() => {
+it('预加载替代资源只缓存实际歌曲，原版下一次仍优先重试', async() => {
   await expect(getMusicUrl({ musicInfo: original, isRefresh: false })).resolves.toBe('replacement-url')
   const onResolvedMusicInfo = vi.fn()
   await expect(getMusicUrl({ musicInfo: original, isRefresh: false, onResolvedMusicInfo })).resolves.toBe('replacement-url')
-  expect(mocks.fetch).toHaveBeenCalledOnce()
+  expect(mocks.fetch).toHaveBeenCalledTimes(2)
   expect(onResolvedMusicInfo).toHaveBeenCalledExactlyOnceWith(replacement)
-  await expect(getMusicUrlInfo(original, '128k')).resolves.toEqual({ id: `${original.id}_128k`, url: 'replacement-url', musicInfo: replacement })
+  await expect(getMusicUrlInfo(original, '128k')).resolves.toBeNull()
   await expect(getMusicUrlInfo(replacement, '128k')).resolves.toEqual({ id: `${replacement.id}_128k`, url: 'replacement-url', musicInfo: replacement })
 })
 
@@ -95,7 +95,8 @@ it('缓存写入失败仍能播放已取得的 URL', async() => {
   expect(onResolvedMusicInfo).toHaveBeenCalledWith(replacement)
 })
 
-it('预加载等待持久缓存写入完成，正式播放不会重复取流', async() => {
+it('预加载原版等待持久缓存写入完成，正式播放不会重复取流', async() => {
+  mocks.fetch.mockResolvedValue({ url: 'original-url', quality: '128k', musicInfo: original, isFromCache: false })
   let release!: () => void
   const writeGate = new Promise<void>(resolve => { release = resolve })
   const invoke = mocks.invoke.getMockImplementation()!

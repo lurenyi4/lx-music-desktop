@@ -121,10 +121,10 @@ it('跨提供方回退命中当前音质缓存时不再取流', async() => {
   expect(mocks.backup).not.toHaveBeenCalled()
 })
 
-it('跨提供方候选的缓存也透传最终提供方身份', async() => {
+it('候选键下的旧跨歌曲缓存不能跳过候选版本重试', async() => {
   const resolved = { ...musicInfo, id: 'kw_resolved', source: 'kw' }
   mocks.cachedUrl.mockResolvedValue({ url: 'cached-url', musicInfo: resolved })
   await expect(getOnlineOtherSourceMusicUrl({ musicInfos: [musicInfo], isRefresh: false, onToggleSource: vi.fn() }))
-    .resolves.toMatchObject({ url: 'cached-url', musicInfo: resolved, isFromCache: true })
-  expect(mocks.backup).not.toHaveBeenCalled()
+    .resolves.toMatchObject({ url: 'https://example.test/audio', musicInfo, isFromCache: false })
+  expect(mocks.backup).toHaveBeenCalled()
 })

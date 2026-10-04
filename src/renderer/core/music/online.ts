@@ -58,14 +58,13 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
   const targetQuality = quality ?? getPlayQuality(appSetting['player.playQuality'], musicInfo)
   const cached = isRefresh ? null : await getMusicUrlInfo(musicInfo, targetQuality)
   // 旧 URL 缓存可能属于别的平台；来源不明时重新取流，不能谎报为原条目。
-  if (cached?.musicInfo && (allowToggleSource || cached.musicInfo.id === musicInfo.id)) {
+  if (cached?.musicInfo && cached.musicInfo.id === musicInfo.id) {
     onResolvedMusicInfo?.(cached.musicInfo)
     return cached.url
   }
 
   return handleGetOnlineMusicUrl({ musicInfo, quality, onToggleSource, onToggleApiSource, isRefresh, allowToggleSource, alternativeMusicInfos }).then(async({ url, quality: targetQuality, musicInfo: targetMusicInfo, isFromCache }) => {
-    const saves = [saveMusicUrl(musicInfo, targetQuality, url, targetMusicInfo)]
-    if (targetMusicInfo.id != musicInfo.id && !isFromCache) saves.push(saveMusicUrl(targetMusicInfo, targetQuality, url, targetMusicInfo))
+    const saves = isFromCache ? [] : [saveMusicUrl(targetMusicInfo, targetQuality, url, targetMusicInfo)]
     // 预加载完成后正式播放即可读取完整结果；写缓存失败仍允许播放有效地址。
     await Promise.all(saves).catch(err => { console.warn('[music] 缓存取流结果失败', err) })
     onResolvedMusicInfo?.(targetMusicInfo)

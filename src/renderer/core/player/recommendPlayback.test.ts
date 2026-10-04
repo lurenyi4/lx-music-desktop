@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { playMusicInfoNow, playNext, setMusicUrl } from './action'
+import { playMusicInfoNow, playMusicSelection, restartSelectedVersion, getNextPlayMusicInfo, resetRandomNextMusicInfo, playNext, setMusicUrl, collectMusic, uncollectMusic } from './action'
 import { playInfo, playMusicInfo, tempPlayList } from '@renderer/store/player/state'
-import { clearTempPlayeList, setPlayMusicInfo, removeTempPlayList, addPlayedList } from '@renderer/store/player/action'
+import { clearTempPlayeList, setPlayMusicInfo, removeTempPlayList, addPlayedList, getList } from '@renderer/store/player/action'
 import { setResource, setStop } from '@renderer/plugins/player'
 import { getMusicUrl } from '../music/index'
 import { writebackToggleMusicInfo } from '../music/toggleWriteback'
 import { getMusicUrl as getOnlineMusicUrl } from '../music/online'
+import { filterList } from './utils'
+import { appSetting } from '@renderer/store/setting'
+import { addListMusics, removeListMusics } from '@renderer/store/list/action'
 
 const urlCache = vi.hoisted(() => ({ entries: new Map<string, LX.Music.MusicUrlInfo>(), resolve: vi.fn() }))
 vi.mock('../music/utils', () => ({
@@ -32,14 +35,15 @@ vi.mock('@renderer/store/player/state', () => ({
 }))
 vi.mock('@renderer/store/player/action', () => ({
   getList: vi.fn(),
+  addTempPlayList: vi.fn(items => { tempPlayList.push(...items.map(item => ({ ...item, isTempPlay: true }))) }),
   clearPlayedList: vi.fn(),
-  clearTempPlayeList: vi.fn(),
+  clearTempPlayeList: vi.fn(() => { tempPlayList.splice(0) }),
   setPlayMusicInfo: vi.fn(),
   addPlayedList: vi.fn(),
   setMusicInfo: vi.fn(),
   setAllStatus: vi.fn(),
   removeTempPlayList: vi.fn(),
-  setPlayListId: vi.fn(),
+  setPlayListId: vi.fn(id => { playInfo.playerListId = id }),
   removePlayedList: vi.fn(),
 }))
 vi.mock('@renderer/store/setting', () => ({ appSetting: { 'player.togglePlayMethod': 'random' } }))
@@ -64,7 +68,7 @@ beforeEach(() => {
   vi.stubGlobal('window', {
     lx: { isPlayedStop: false },
     i18n: { t: (value: string) => value },
-    app_event: { pause: vi.fn(), picUpdated: vi.fn(), lyricUpdated: vi.fn(), error: vi.fn() },
+    app_event: { stop: vi.fn(), pause: vi.fn(), picUpdated: vi.fn(), lyricUpdated: vi.fn(), error: vi.fn() },
   })
   vi.mocked(setPlayMusicInfo).mockImplementation((listId, musicInfo, isTempPlay = false, alternativeMusicInfos) => {
     Object.assign(playMusicInfo, { listId, musicInfo, isTempPlay, alternativeMusicInfos })
@@ -118,7 +122,7 @@ it('播放器接受 URL 后才执行换源写回', async() => {
   expect(vi.mocked(setResource).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(writebackToggleMusicInfo).mock.invocationCallOrder[0])
 })
 
-it('预加载换源只缓存实际身份，正式播放命中缓存后才写回列表', async() => {
+it('预加载替代源不占用原版缓存键，正式播放重新尝试原版', async() => {
   const original = onlineSong('kw_preloaded')
   const replacement = onlineSong('wy_preloaded', 'wy')
   urlCache.resolve.mockResolvedValueOnce({ url: 'cached-fallback', quality: '128k', musicInfo: replacement, isFromCache: false })
@@ -128,12 +132,15 @@ it('预加载换源只缓存实际身份，正式播放命中缓存后才写回�
   expect(setResource).not.toHaveBeenCalled()
   expect(original.meta.toggleMusicInfo).toBeUndefined()
 
+  expect(urlCache.entries.has('kw_preloaded_128k')).toBe(false)
+  expect(urlCache.entries.get('wy_preloaded_128k')?.musicInfo).toBe(replacement)
+  urlCache.resolve.mockResolvedValueOnce({ url: 'original-restored', quality: '128k', musicInfo: original, isFromCache: false })
   playMusicInfo.musicInfo = original
   vi.mocked(getMusicUrl).mockImplementationOnce(getOnlineMusicUrl as typeof getMusicUrl)
   setMusicUrl(original)
-  await vi.waitFor(() => { expect(writebackToggleMusicInfo).toHaveBeenCalledWith(original, replacement) })
-  expect(urlCache.resolve).toHaveBeenCalledOnce()
-  expect(setResource).toHaveBeenCalledWith('cached-fallback')
+  await vi.waitFor(() => { expect(writebackToggleMusicInfo).toHaveBeenCalledWith(original, original) })
+  expect(urlCache.resolve).toHaveBeenCalledTimes(2)
+  expect(setResource).toHaveBeenCalledWith('original-restored')
   expect(vi.mocked(setResource).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(writebackToggleMusicInfo).mock.invocationCallOrder[0])
 })
 
@@ -231,4 +238,66 @@ it.each(['ended', 'error', 'removed'] as const)('自动切歌把 %s 原因传给
   tempPlayList.push({ listId: 'later', musicInfo: song, isTempPlay: true })
   await playNext(true, reason)
   expect(setPlayMusicInfo).toHaveBeenCalledWith('later', song, true, undefined, reason)
+})
+
+
+it('explicit selection replaces old pending tracks, preserves order and detaches previous list', async() => {
+  const selection = [onlineSong('third'), onlineSong('first'), onlineSong('second')]
+  tempPlayList.push({ listId: 'old', musicInfo: onlineSong('old'), isTempPlay: true })
+  playMusicSelection(selection, 'selected-list')
+  expect(playInfo.playerListId).toBeNull()
+  expect(playMusicInfo.musicInfo?.id).toBe('third')
+  expect(tempPlayList.map(item => item.musicInfo.id)).toEqual(['first', 'second'])
+  await playNext()
+  expect(playMusicInfo.musicInfo?.id).toBe('first')
+  await playNext()
+  expect(playMusicInfo.musicInfo?.id).toBe('second')
+  expect(tempPlayList).toHaveLength(0)
+})
+
+
+it('changing a manual version restarts only that song and preserves pending queue', () => {
+  const original = onlineSong('original')
+  const updated = { ...original, meta: { ...original.meta, toggleMusicInfo: onlineSong('selected'), manualVersionPinned: true } }
+  Object.assign(playMusicInfo, { musicInfo: original, listId: 'love', isTempPlay: false })
+  const pending = { listId: 'later', musicInfo: onlineSong('queued'), isTempPlay: true }
+  tempPlayList.push(pending)
+  restartSelectedVersion('love', updated)
+  expect(playMusicInfo.musicInfo).toBe(updated)
+  expect(playMusicInfo.isTempPlay).toBe(false)
+  expect(tempPlayList).toEqual([pending])
+  expect(clearTempPlayeList).not.toHaveBeenCalled()
+})
+it('sequential next preview and playback do not skip the first song when current track disappeared', async() => {
+  const tracks = [onlineSong('first'), onlineSong('second')]
+  appSetting['player.togglePlayMethod'] = 'list'
+  Object.assign(playInfo, { playerListId: 'list', playerPlayIndex: 0 })
+  Object.assign(playMusicInfo, { musicInfo: onlineSong('removed'), listId: 'list', isTempPlay: false })
+  resetRandomNextMusicInfo()
+  vi.mocked(getList).mockReturnValue(tracks)
+  vi.mocked(filterList).mockResolvedValue({ filteredList: tracks, playerIndex: -1 })
+  expect((await getNextPlayMusicInfo())?.musicInfo.id).toBe('first')
+  await playNext(true)
+  expect(playMusicInfo.musicInfo?.id).toBe('first')
+})
+it('selected queue stops after its last song instead of resuming the old list', async() => {
+  vi.useFakeTimers()
+  const selected = onlineSong('last')
+  playMusicSelection([selected], 'user-list')
+  await playNext(true)
+  await vi.runAllTimersAsync()
+  expect(playMusicInfo.musicInfo).toBeNull()
+  expect(playInfo.playerListId).toBeNull()
+  vi.useRealTimers()
+})
+
+it('collect/uncollect during a temporary rescue use the original saved identity and pin', () => {
+  const original = onlineSong('saved')
+  original.meta.toggleMusicInfo = onlineSong('manual')
+  original.meta.manualVersionPinned = true
+  Object.assign(playMusicInfo, { musicInfo: original, resolvedMusicInfo: onlineSong('rescue') })
+  collectMusic()
+  expect(addListMusics).toHaveBeenCalledWith(undefined, [original])
+  uncollectMusic()
+  expect(removeListMusics).toHaveBeenCalledWith({ listId: undefined, ids: ['saved'] })
 })
