@@ -1,0 +1,26 @@
+{
+  "extends": "./tsconfig.playback.json",
+  "include": [
+    "../e2e/onlineCache.test.ts",
+    "../src/lang/i18n.playback.test.ts",
+    "../src/renderer/core/catalog/adapter.test.ts",
+    "../src/renderer/core/catalog/controller.test.ts",
+    "../src/renderer/core/catalog/sdkPaging.test.ts",
+    "../src/renderer/core/music/coverOwnership.test.ts",
+    "../src/renderer/core/music/localResolution.test.ts",
+    "../src/renderer/core/music/rotation.test.ts",
+    "../src/renderer/core/music/toggleWriteback.test.ts",
+    "../src/renderer/core/music/versionSelection.test.ts",
+    "../src/renderer/core/player/queue.test.ts",
+    "../src/renderer/core/player/recommendPlayback.test.ts",
+    "../src/renderer/core/player/selectionEntrypoints.test.ts",
+    "../src/renderer/core/recommend/selectionRadio.test.ts",
+    "../src/renderer/views/List/MusicList/components/MusicToggleModal.test.ts",
+    "../src/renderer/views/List/MusicList/useMusicToggle.test.ts",
+    "../src/common/types/**/*.d.ts",
+    "../src/renderer/types/**/*.d.ts"
+  ],
+  "exclude": [
+    "../node_modules"
+  ]
+}

@@ -18,7 +18,7 @@
 import { LIST_IDS } from '@common/constants'
 import { normalizeRecommendEngine } from '@common/recommendationConfig'
 import { computed, ref, watch } from '@common/utils/vueTools'
-import { appSetting } from '@renderer/store/setting'
+import { appSetting, updateSetting } from '@renderer/store/setting'
 import { isPlay, playMusicInfo, tempPlayList } from '@renderer/store/player/state'
 import { addTempPlayList, removeTempPlayList } from '@renderer/store/player/action'
 import { playMusicInfoNow } from '@renderer/core/player'
@@ -672,6 +672,16 @@ const reanchorRadioSession = (prev: SessionState, play: NonNullable<ReturnType<t
  * - ignore：不动作（电台关且不在路径上时，用户切到非推荐歌曲不会自动续补，避免抢占播放权）。
  */
 const handleMusicToggled = (reason: LX.Player.MusicChangeReason = 'user'): void => {
+  // An explicit finite selection owns the queue until the user starts radio again.
+  // Stop synchronously before playback enqueues the remaining selection; epoch invalidates old requests.
+  if (reason === 'selection') {
+    emitSongChangeMetrics(currentMusic(), false, 'user')
+    const wasEnabled = appSetting['recommend.radio']
+    appSetting['recommend.radio'] = false
+    endSession()
+    if (wasEnabled) updateSetting({ 'recommend.radio': false })
+    return
+  }
   const st = state.value
   const play = currentMusic()
   // SongChangeSong 已裁剪为判定实际消费的 id；宽对象经变量透传（结构类型兼容），不再逐字段复制

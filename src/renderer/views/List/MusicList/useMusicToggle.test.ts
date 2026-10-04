@@ -33,3 +33,16 @@ it('a song removed while the chooser is open is not added back', async() => {
   await hook.toggleSource(song('selected'))
   expect(updateListMusics).not.toHaveBeenCalled()
 })
+
+it('preview B then confirm must restore the original collection identity A', async() => {
+  const original = song('a')
+  const selected = song('b')
+  Object.assign(playMusicInfo, { musicInfo: original, listId: 'love', isTempPlay: false })
+  const hook = useMusicToggle({ listId: 'love' }, { value: [original] })
+  hook.selectedToggleMusicInfo.value = original
+  // This event precedes the modal's real preview playNext call.
+  hook.handlePreviewVersion(selected)
+  Object.assign(playMusicInfo, { musicInfo: selected, listId: 'playLater', isTempPlay: true })
+  await hook.toggleSource(selected)
+  expect(restartSelectedVersion).toHaveBeenCalledWith('love', expect.objectContaining({ id: 'a' }), { musicInfo: selected, isTempPlay: false })
+})

@@ -1,7 +1,7 @@
 import { getDownloadFilePath } from '@renderer/utils/music'
 
 import {
-  getMusicUrl as getOnlineMusicUrl,
+  getVersionMusicUrl as getOnlineMusicUrl,
   getPicUrl as getOnlinePicUrl,
   getLyricInfo as getOnlineLyricInfo,
 } from './online'

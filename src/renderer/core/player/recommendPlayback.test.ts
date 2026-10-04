@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { playMusicInfoNow, playMusicSelection, restartSelectedVersion, getNextPlayMusicInfo, resetRandomNextMusicInfo, playNext, setMusicUrl, collectMusic, uncollectMusic } from './action'
-import { playInfo, playMusicInfo, tempPlayList } from '@renderer/store/player/state'
-import { clearTempPlayeList, setPlayMusicInfo, removeTempPlayList, addPlayedList, getList } from '@renderer/store/player/action'
+import { playInfo, playMusicInfo, tempPlayList, playedList } from '@renderer/store/player/state'
+import { clearTempPlayeList, setPlayMusicInfo, removeTempPlayList, addPlayedList, getList, setMusicInfo } from '@renderer/store/player/action'
 import { setResource, setStop } from '@renderer/plugins/player'
-import { getMusicUrl } from '../music/index'
+import { getMusicUrl, getPicPath, getLyricInfo } from '../music/index'
 import { writebackToggleMusicInfo } from '../music/toggleWriteback'
 import { getMusicUrl as getOnlineMusicUrl } from '../music/online'
 import { filterList } from './utils'
@@ -300,4 +300,69 @@ it('collect/uncollect during a temporary rescue use the original saved identity 
   expect(addListMusics).toHaveBeenCalledWith(undefined, [original])
   uncollectMusic()
   expect(removeListMusics).toHaveBeenCalledWith({ listId: undefined, ids: ['saved'] })
+})
+
+it.each(['local', 'download'])('%s fallback must record actual source and temporary notice while retaining container identity', async(kind) => {
+  const base = onlineSong('original')
+  const original = kind === 'local'
+    ? { ...base, source: 'local', meta: { ...base.meta, filePath: '/missing.mp3', ext: 'mp3' } }
+    : { id: 'download-a', progress: {}, metadata: { musicInfo: base } }
+  const resolved = onlineSong('rescued')
+  playMusicInfo.musicInfo = original as any
+  vi.mocked(getMusicUrl).mockImplementationOnce(async({ onResolvedMusicInfo }) => { onResolvedMusicInfo?.(resolved); return 'rescued-url' })
+  setMusicUrl(original as any)
+  await vi.waitFor(() => { expect(writebackToggleMusicInfo).toHaveBeenCalledWith(original, resolved) })
+  expect(playMusicInfo.musicInfo).toBe(original)
+})
+
+it('confirming the active chooser preview restores the saved original identity and original temp flag', () => {
+  const original = onlineSong('saved-a')
+  const preview = onlineSong('preview-b')
+  original.meta = { ...original.meta, toggleMusicInfo: preview, manualVersionPinned: true }
+  Object.assign(playMusicInfo, { musicInfo: preview, listId: 'playLater', isTempPlay: true })
+  const pending = { listId: 'later', musicInfo: onlineSong('queued'), isTempPlay: true }
+  tempPlayList.push(pending)
+  restartSelectedVersion('love', original, { musicInfo: preview, isTempPlay: false })
+  expect(playMusicInfo.musicInfo).toBe(original)
+  expect(playMusicInfo.listId).toBe('love')
+  expect(playMusicInfo.isTempPlay).toBe(false)
+  expect(tempPlayList).toEqual([pending])
+})
+it('confirming an old chooser after another track starts never interrupts the newer track', () => {
+  const current = onlineSong('newer')
+  Object.assign(playMusicInfo, { musicInfo: current, listId: 'other', isTempPlay: true })
+  restartSelectedVersion('love', onlineSong('a'), { musicInfo: onlineSong('b'), isTempPlay: false })
+  expect(playMusicInfo.musicInfo).toBe(current)
+})
+
+it('switching from random to sequential ignores old random history when choosing the next song', async() => {
+  const tracks = [onlineSong('a'), onlineSong('b'), onlineSong('c')]
+  appSetting['player.togglePlayMethod'] = 'list'
+  Object.assign(playInfo, { playerListId: 'list', playerPlayIndex: 0 })
+  Object.assign(playMusicInfo, { musicInfo: tracks[0], listId: 'list', isTempPlay: false })
+  playedList.splice(0, playedList.length, ...[tracks[0], tracks[2], tracks[1]].map(musicInfo => ({ musicInfo, listId: 'list', isTempPlay: false })))
+  resetRandomNextMusicInfo()
+  vi.mocked(getList).mockReturnValue(tracks)
+  vi.mocked(filterList).mockResolvedValue({ filteredList: tracks, playerIndex: 0 })
+  expect((await getNextPlayMusicInfo())?.musicInfo.id).toBe('b')
+  await playNext(true)
+  expect(playMusicInfo.musicInfo?.id).toBe('b')
+  playedList.splice(0)
+})
+
+it('late artwork and lyrics from the previous version cannot overwrite the same saved ID after reselecting', async() => {
+  const original = onlineSong('a')
+  const updated = { ...original, meta: { ...original.meta, toggleMusicInfo: onlineSong('b') } }
+  let oldPic!: (value: string) => void
+  let oldLyric!: (value: any) => void
+  vi.mocked(getPicPath).mockImplementationOnce(async() => new Promise(resolve => { oldPic = resolve })).mockResolvedValueOnce('new-cover')
+  vi.mocked(getLyricInfo).mockImplementationOnce(async() => new Promise(resolve => { oldLyric = resolve })).mockResolvedValueOnce({ lyric: 'new-lyrics', rawlrcInfo: { lyric: 'new-lyrics' } } as any)
+  playMusicInfoNow(original)
+  playMusicInfoNow(updated)
+  for (let i = 0; i < 15; i++) await Promise.resolve()
+  expect(setMusicInfo).toHaveBeenCalledWith({ pic: 'new-cover' })
+  vi.mocked(setMusicInfo).mockClear()
+  oldPic('old-cover'); oldLyric({ lyric: 'old-lyrics', rawlrcInfo: { lyric: 'old-lyrics' } })
+  for (let i = 0; i < 15; i++) await Promise.resolve()
+  expect(setMusicInfo).not.toHaveBeenCalled()
 })

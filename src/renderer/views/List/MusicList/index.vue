@@ -98,7 +98,7 @@
     <common-download-multiple-modal v-model:show="isShowDownloadMultiple" :list="selectedList" teleport="#view" :list-id="listId" @confirm="removeAllSelect" />
     <search-list :list="list" :visible="isShowSearchBar" @action="handleMusicSearchAction" />
     <music-sort-modal v-model:show="isShowMusicSortModal" :music-info="selectedSortMusicInfo" :selected-num="selectedNum" @confirm="sortMusic" />
-    <music-toggle-modal v-model:show="isShowMusicToggleModal" :music-info="selectedToggleMusicInfo" @toggle="toggleSource" />
+    <music-toggle-modal v-model:show="isShowMusicToggleModal" :music-info="selectedToggleMusicInfo" @toggle="toggleSource" @preview="handlePreviewVersion" />
     <base-menu v-model="isShowItemMenu" :menus="menus" :xy="menuLocation" item-name="name" @menu-click="handleMenuClick" />
   </div>
 </template>
@@ -206,6 +206,7 @@ export default {
       isShowMusicToggleModal,
       selectedToggleMusicInfo,
       toggleSource,
+      handlePreviewVersion,
     } = useMusicToggle(props, list)
 
     const {
@@ -354,6 +355,7 @@ export default {
       isShowMusicToggleModal,
       selectedToggleMusicInfo,
       toggleSource,
+      handlePreviewVersion,
     }
   },
 }

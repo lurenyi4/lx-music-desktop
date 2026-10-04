@@ -1,5 +1,5 @@
 import { getList } from '@renderer/store/player/action'
-import { playedList, playInfo, tempPlayList } from '@renderer/store/player/state'
+import { playInfo, tempPlayList } from '@renderer/store/player/state'
 import { appSetting } from '@renderer/store/setting'
 import { getNextPlayMusicInfo } from './action'
 import { filterList } from './utils'
@@ -16,7 +16,7 @@ export const getPlaybackQueue = async() => {
     return { next, entries: pending, random: true }
   }
   const list = getList(listId)
-  const { filteredList, playerIndex } = await filterList({ listId, list, playedList, playerMusicInfo: list[playInfo.playerPlayIndex], isNext: true })
+  const { filteredList, playerIndex } = await filterList({ listId, list, playedList: [], playerMusicInfo: list[playInfo.playerPlayIndex], isNext: true })
   let upcoming: typeof filteredList = []
   if (mode === 'singleLoop') {
     const repeated = filteredList[Math.max(0, playerIndex)]

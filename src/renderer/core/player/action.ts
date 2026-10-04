@@ -115,8 +115,11 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
     if (!url || isStaleMusicUrlRequest(musicInfo, requestId)) return
     setResource(url)
     // Record the actual source without replacing the saved song or manual version.
-    if (resolvedMusicInfo && 'source' in musicInfo && musicInfo.source !== 'local') {
+    if (resolvedMusicInfo) {
       void writebackToggleMusicInfo(musicInfo, resolvedMusicInfo).catch(err => { console.log(err) })
+    } else {
+      playMusicInfo.resolvedMusicInfo = undefined
+      playMusicInfo.versionNotice = undefined
     }
   }).catch((err: any) => {
     if (isStaleMusicUrlRequest(musicInfo, requestId)) return
@@ -133,11 +136,7 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
   })
 }
 
-const isCurrentMusic = (info: LX.Music.MusicInfo | LX.Download.ListItem): boolean => {
-  const currentId = playMusicInfo.musicInfo?.id
-  const original = 'progress' in info ? info.metadata.musicInfo : info
-  return currentId != null && (info.id === currentId || original.meta.toggleMusicInfo?.id === currentId)
-}
+const isCurrentMusic = (info: LX.Music.MusicInfo | LX.Download.ListItem): boolean => playMusicInfo.musicInfo === info
 
 // 恢复上次播放的状态
 const handleRestorePlay = async(restorePlayInfo: LX.Player.SavedPlayInfo) => {
@@ -283,14 +282,14 @@ export const getNextPlayMusicInfo = async(): Promise<LX.Player.PlayMusicInfo | n
 
   if (playMusicInfo.musicInfo == null) return null
 
-  if (randomNextMusicInfo.info) return randomNextMusicInfo.info
+  if (appSetting['player.togglePlayMethod'] === 'random' && randomNextMusicInfo.info) return randomNextMusicInfo.info
 
   // console.log(playInfo.playerListId)
   const currentListId = playInfo.playerListId
   if (!currentListId) return null
   const currentList = getList(currentListId)
 
-  if (playedList.length) { // 移除已播放列表内不存在原列表的歌曲
+  if (appSetting['player.togglePlayMethod'] === 'random' && playedList.length) { // 移除已播放列表内不存在原列表的歌曲
     let currentId: string
     if (playMusicInfo.isTempPlay) {
       const musicInfo = currentList[playInfo.playerPlayIndex]
@@ -316,7 +315,7 @@ export const getNextPlayMusicInfo = async(): Promise<LX.Player.PlayMusicInfo | n
   let { filteredList, playerIndex } = await filterList({ // 过滤已播放歌曲
     listId: currentListId,
     list: currentList,
-    playedList,
+    playedList: appSetting['player.togglePlayMethod'] === 'random' ? playedList : [],
     playerMusicInfo: currentList[playInfo.playerPlayIndex],
     isNext: true,
   })
@@ -376,9 +375,11 @@ export const playMusicInfoNow = (musicInfo: LX.Music.MusicInfo | LX.Download.Lis
   handlePlay()
 }
 /** Restart a manually selected version without discarding the user's pending queue. */
-export const restartSelectedVersion = (listId: string, musicInfo: LX.Music.MusicInfo) => {
-  if (playMusicInfo.listId !== listId || playMusicInfo.musicInfo?.id !== musicInfo.id) return
-  setPlayMusicInfo(listId, musicInfo, playMusicInfo.isTempPlay, playMusicInfo.alternativeMusicInfos)
+export const restartSelectedVersion = (listId: string, musicInfo: LX.Music.MusicInfo, preview?: { musicInfo: LX.Music.MusicInfo, isTempPlay: boolean }) => {
+  const isOriginal = playMusicInfo.listId === listId && playMusicInfo.musicInfo?.id === musicInfo.id
+  const isPreview = preview && playMusicInfo.musicInfo === preview.musicInfo && playMusicInfo.isTempPlay
+  if (!isOriginal && !isPreview) return
+  setPlayMusicInfo(listId, musicInfo, isOriginal ? playMusicInfo.isTempPlay : preview!.isTempPlay, isOriginal ? playMusicInfo.alternativeMusicInfos : undefined)
   handlePlay()
 }
 
@@ -388,7 +389,7 @@ export const playMusicSelection = (list: Array<LX.Music.MusicInfo | LX.Download.
   clearTempPlayeList()
   clearPlayedList()
   setPlayListId(null)
-  setPlayMusicInfo(listId, list[0], true)
+  setPlayMusicInfo(listId, list[0], true, undefined, 'selection')
   addTempPlayList(list.slice(1).map(musicInfo => ({ listId, musicInfo })))
   handlePlay()
 }
@@ -423,7 +424,7 @@ export const playNext = async(isAutoToggle = false, reason: LX.Player.MusicChang
   }
   const currentList = getList(currentListId)
 
-  if (playedList.length) { // 移除已播放列表内不存在原列表的歌曲
+  if (appSetting['player.togglePlayMethod'] === 'random' && playedList.length) { // 移除已播放列表内不存在原列表的歌曲
     let currentId: string
     if (playMusicInfo.isTempPlay) {
       const musicInfo = currentList[playInfo.playerPlayIndex]
@@ -449,7 +450,7 @@ export const playNext = async(isAutoToggle = false, reason: LX.Player.MusicChang
       return
     }
   }
-  if (randomNextMusicInfo.info) {
+  if (appSetting['player.togglePlayMethod'] === 'random' && randomNextMusicInfo.info) {
     handlePlayNext(randomNextMusicInfo.info, reason)
     return
   }
@@ -457,7 +458,7 @@ export const playNext = async(isAutoToggle = false, reason: LX.Player.MusicChang
   let { filteredList, playerIndex } = await filterList({ // 过滤已播放歌曲
     listId: currentListId,
     list: currentList,
-    playedList,
+    playedList: appSetting['player.togglePlayMethod'] === 'random' ? playedList : [],
     playerMusicInfo: currentList[playInfo.playerPlayIndex],
     isNext: true,
   })
@@ -525,7 +526,7 @@ export const playPrev = async(isAutoToggle = false): Promise<void> => {
   }
   const currentList = getList(currentListId)
 
-  if (playedList.length) {
+  if (appSetting['player.togglePlayMethod'] === 'random' && playedList.length) {
     let currentId: string
     if (playMusicInfo.isTempPlay) {
       const musicInfo = currentList[playInfo.playerPlayIndex]
@@ -555,7 +556,7 @@ export const playPrev = async(isAutoToggle = false): Promise<void> => {
   let { filteredList, playerIndex } = await filterList({ // 过滤已播放歌曲
     listId: currentListId,
     list: currentList,
-    playedList,
+    playedList: appSetting['player.togglePlayMethod'] === 'random' ? playedList : [],
     playerMusicInfo: currentList[playInfo.playerPlayIndex],
     isNext: false,
   })

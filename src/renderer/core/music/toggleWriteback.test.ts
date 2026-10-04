@@ -4,7 +4,7 @@ import { writebackToggleMusicInfo } from './toggleWriteback'
 
 vi.mock('@renderer/store/player/state', () => ({ playMusicInfo: { musicInfo: null, listId: 'love', isTempPlay: false } }))
 const song = (id: string): LX.Music.MusicInfoOnline => ({ id, name: id, singer: 'Artist', source: 'kw', interval: null, meta: { songId: id, albumName: '', qualitys: [], _qualitys: {} } })
-beforeEach(() => { Object.assign(playMusicInfo, { musicInfo: null, resolvedMusicInfo: undefined, versionNotice: undefined }) })
+beforeEach(() => { vi.stubGlobal('window', { i18n: { t: (key: string) => key === 'player__temporary_version_notice' ? '临时播放' : key } }); Object.assign(playMusicInfo, { musicInfo: null, resolvedMusicInfo: undefined, versionNotice: undefined }) })
 describe('temporary rescue preserves identity', () => {
   it.each([true, false])('never replaces the original saved or temporary item (temporary=%s)', async(isTempPlay) => {
     const original = song('original')
@@ -34,4 +34,20 @@ describe('temporary rescue preserves identity', () => {
     await writebackToggleMusicInfo(song('old'), song('rescue'))
     expect(playMusicInfo.resolvedMusicInfo).toBeUndefined()
   })
+})
+
+it.each(['download', 'local'])('records rescue details for %s containers without losing saved identity', async(kind) => {
+  const base = song('original')
+  base.meta.toggleMusicInfo = song('chosen')
+  const original = kind === 'download'
+    ? { id: 'download-original', progress: {}, metadata: { musicInfo: base } }
+    : { ...base, source: 'local', meta: { ...base.meta, filePath: '/saved.mp3', ext: 'mp3' } }
+  const rescued = song('rescued')
+  const before = JSON.stringify(original)
+  playMusicInfo.musicInfo = original as any
+  await writebackToggleMusicInfo(original as any, rescued)
+  expect(playMusicInfo.musicInfo).toBe(original)
+  expect(playMusicInfo.resolvedMusicInfo).toBe(rescued)
+  expect(playMusicInfo.versionNotice).toBe('临时播放')
+  expect(JSON.stringify(original)).toBe(before)
 })

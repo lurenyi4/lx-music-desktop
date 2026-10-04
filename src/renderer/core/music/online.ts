@@ -1,4 +1,5 @@
-import { updateListMusics } from '@renderer/store/list/action'
+import { requestMsg } from '@renderer/utils/message'
+import { getPreferredMusicInfo } from './version'
 import { appSetting } from '@renderer/store/setting'
 import {
   saveLyric,
@@ -72,7 +73,21 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
   })
 }
 
-export const getPicUrl = async({ musicInfo, listId, isRefresh, allowToggleSource = true, onToggleSource = () => {} }: {
+/** Shared online-version policy; download callers invoke it only after checking the saved file. */
+export const getVersionMusicUrl = async(options: Omit<Parameters<typeof getMusicUrl>[0], 'musicInfo'> & { musicInfo: LX.Music.MusicInfo }): Promise<string> => {
+  const preferred = getPreferredMusicInfo(options.musicInfo)
+  if (preferred.source === 'local') throw new Error('online version unavailable')
+  if (preferred === options.musicInfo) return getMusicUrl({ ...options, musicInfo: preferred })
+  try {
+    return await getMusicUrl({ ...options, musicInfo: preferred, allowToggleSource: false })
+  } catch (error) {
+    if (options.allowToggleSource === false || (error instanceof Error && error.message === requestMsg.cancelRequest)) throw error
+    options.onToggleSource?.()
+    return getMusicUrl({ ...options, musicInfo: preferred, allowToggleSource: true })
+  }
+}
+
+export const getPicUrl = async({ musicInfo, isRefresh, allowToggleSource = true, onToggleSource = () => {} }: {
   musicInfo: LX.Music.MusicInfoOnline
   listId?: string | null
   isRefresh: boolean
@@ -81,12 +96,8 @@ export const getPicUrl = async({ musicInfo, listId, isRefresh, allowToggleSource
 }): Promise<string> => {
   if (musicInfo.meta.picUrl && !isRefresh) return musicInfo.meta.picUrl
   return handleGetOnlinePicUrl({ musicInfo, onToggleSource, isRefresh, allowToggleSource }).then(({ url, musicInfo: targetMusicInfo, isFromCache }) => {
-    // picRequest = null
-    if (listId) {
-      musicInfo.meta.picUrl = url
-      void updateListMusics([{ id: listId, musicInfo }])
-    }
-    // savePic({ musicInfo, url, listId })
+    // Automatic artwork belongs to this playback request, not a full saved-list metadata update.
+    // A late result must never overwrite a newer manual version or another saved entry.
     return url
   })
 }

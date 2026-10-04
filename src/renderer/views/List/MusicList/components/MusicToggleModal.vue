@@ -32,14 +32,15 @@
       </div>
       <div :class="$style.footer">
         <div :class="$style.info">
+          <span>{{ $t(isManualVersion ? 'music_toggle_pinned_version' : 'music_toggle_current_version') }}</span>
           <h2>
             <div :class="$style.nameLabel">
-              <span :class="$style.name">{{ musicInfo.name }}</span>
-              <span :class="$style.label">{{ musicInfo.source }} {{ musicInfo.interval }}</span>
+              <span :class="$style.name">{{ preferredMusicInfo.name }}</span>
+              <span :class="$style.label">{{ preferredMusicInfo.source }} {{ preferredMusicInfo.interval }}</span>
             </div>
             <div :class="$style.singer">
-              {{ musicInfo.singer }}
-              <span v-if="musicInfo.meta.albumName"> / {{ musicInfo.meta.albumName }}</span>
+              {{ preferredMusicInfo.singer }}
+              <span v-if="preferredMusicInfo.meta.albumName"> / {{ preferredMusicInfo.meta.albumName }}</span>
             </div>
           </h2>
           <template v-if="toggleMusicInfo">
@@ -56,7 +57,8 @@
             </h2>
           </template>
         </div>
-        <base-btn :disabled="!toggleMusicInfo || musicInfo.id == toggleMusicInfo.id" :class="$style.btn" @click="handleConfirm">{{ $t('music_toggle_confirm') }}</base-btn>
+        <base-btn v-if="musicInfo.id !== preferredMusicInfo.id" :class="$style.btn" @click="handlePlay(createManualVersion(musicInfo, musicInfo))">{{ $t('music_toggle_original_version') }}</base-btn>
+        <base-btn :disabled="!toggleMusicInfo || preferredMusicInfo.id == toggleMusicInfo.id" :class="$style.btn" @click="handleConfirm">{{ $t('music_toggle_confirm') }}</base-btn>
       </div>
     </main>
   </material-modal>
@@ -72,6 +74,7 @@ import { playMusicInfo } from '@renderer/store/player/state'
 import { toNewMusicInfo, toOldMusicInfo } from '@renderer/utils'
 import musicSdk from '@renderer/utils/musicSdk'
 import { markRaw } from 'vue'
+import { getPreferredMusicInfo, getVersionPreference, createManualVersion } from '@renderer/core/music/version'
 
 export default {
   props: {
@@ -86,7 +89,7 @@ export default {
       },
     },
   },
-  emits: ['update:show', 'toggle'],
+  emits: ['update:show', 'toggle', 'preview'],
   data() {
     return {
       tabs: [],
@@ -99,6 +102,8 @@ export default {
     }
   },
   computed: {
+    preferredMusicInfo() { return getPreferredMusicInfo(this.musicInfo) },
+    isManualVersion() { return getVersionPreference(this.musicInfo) === 'manual' },
     list() {
       return this.lists[this.source] ?? []
     },
@@ -111,7 +116,7 @@ export default {
       if (n) {
         this.isError = false
         this.toggleMusicInfo = null
-        const musicInfo = this.musicInfo
+        const musicInfo = this.preferredMusicInfo
         this.tabs = []
         this.lists = {}
         this.loading = true
@@ -144,6 +149,7 @@ export default {
     },
   },
   methods: {
+    createManualVersion,
     handleClose() {
       this.$emit('update:show', false)
     },
@@ -157,6 +163,7 @@ export default {
     },
     handlePlay(musicInfo) {
       this.toggleMusicInfo = musicInfo
+      this.$emit('preview', musicInfo)
       const isPlaying = !!playMusicInfo.musicInfo
       addTempPlayList([{ listId: LIST_IDS.PLAY_LATER, musicInfo, isTop: true }])
       if (isPlaying) void playNext()
