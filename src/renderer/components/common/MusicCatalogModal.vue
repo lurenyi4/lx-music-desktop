@@ -1,25 +1,25 @@
 <template>
   <material-modal :show="catalogState.show" width="88%" max-width="1000px" height="82%" max-height="90%" bg-close @close="catalogActions.close">
-    <section :class="$style.catalog" aria-label="音乐目录">
+    <section :class="$style.catalog" :aria-label="$t('catalog__title')">
       <h2>{{ catalogState.title }}</h2>
-      <div v-if="catalogState.targets.length > 1" :class="$style.artists" aria-label="选择艺人">
-        <span>选择艺人：</span>
+      <div v-if="catalogState.targets.length > 1" :class="$style.artists" :aria-label="$t('catalog__select_artist')">
+        <span>{{ $t('catalog__select_artist') }}</span>
         <base-btn v-for="target in catalogState.targets" :key="target.id" :aria-pressed="catalogState.target?.id === target.id" @click="catalogActions.select(target)">{{ target.name }}</base-btn>
       </div>
-      <p v-if="catalogState.error" :class="$style.status" role="alert">{{ catalogState.error }} <base-btn :disabled="catalogState.loading" @click="catalogActions.retry">重试</base-btn></p>
-      <p v-if="catalogState.loading" :class="$style.status" role="status">正在加载目录…</p>
+      <p v-if="catalogState.error" :class="$style.status" role="alert">{{ catalogState.error }} <base-btn :disabled="catalogState.loading" @click="catalogActions.retry">{{ $t('retry') }}</base-btn></p>
+      <p v-if="catalogState.loading" :class="$style.status" role="status">{{ $t('catalog__loading') }}</p>
       <div v-if="catalogState.target" :class="$style.songs">
         <material-online-list
           :key="`${catalogState.target.source}:${catalogState.target.kind}:${catalogState.target.id}`"
           :list="catalogState.list" :page="1" :limit="Math.max(1, catalogState.list.length)" :total="catalogState.list.length"
-          :no-item="!catalogState.loading && !catalogState.error && !catalogState.list.length ? '提供方未返回歌曲' : ''"
+          :no-item="!catalogState.loading && !catalogState.error && !catalogState.list.length ? $t('catalog__empty') : ''"
           check-api-source @play-list="playCatalogSong"
         />
       </div>
       <footer v-if="catalogState.target" :class="$style.footer">
-        <span>已加载 {{ catalogState.list.length }} 首<span v-if="catalogState.total !== null"> · 提供方目录 {{ catalogState.total }} 首</span></span>
-        <base-btn v-if="catalogState.hasMore" :disabled="catalogState.loading" @click="catalogActions.loadMore">加载更多</base-btn>
-        <span v-else-if="!catalogState.loading && !catalogState.error">{{ catalogState.total === null ? '提供方未返回更多歌曲' : catalogState.list.length < catalogState.total ? '提供方分页结束，部分歌曲未返回' : '已到目录末尾' }}</span>
+        <span>{{ $t('catalog__loaded_count', { count: catalogState.list.length }) }}<span v-if="catalogState.total !== null"> · {{ $t('catalog__total_count', { count: catalogState.total }) }}</span></span>
+        <base-btn v-if="catalogState.hasMore" :disabled="catalogState.loading" @click="catalogActions.loadMore">{{ $t('catalog__load_more') }}</base-btn>
+        <span v-else-if="!catalogState.loading && !catalogState.error">{{ $t(catalogState.total === null ? 'catalog__no_more' : catalogState.list.length < catalogState.total ? 'catalog__partial_end' : 'catalog__end') }}</span>
       </footer>
     </section>
   </material-modal>

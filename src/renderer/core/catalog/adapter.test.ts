@@ -1,7 +1,15 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createI18n } from '../../../lang'
 import { toNewMusicInfo, toOldMusicInfo } from '@common/utils/tools'
 import { createCatalogAdapter } from './adapter'
 import { type CatalogTarget } from './types'
+
+beforeEach(() => {
+  const i18n = createI18n()
+  i18n.setLanguage('zh-cn')
+  vi.stubGlobal('window', { i18n })
+})
+afterEach(() => { vi.unstubAllGlobals() })
 
 const raw = (id = 'song') => ({ name: 'Song', singer: 'Artist', source: 'wy', songmid: id, albumName: 'Album', albumId: 8, types: [], _types: {}, artists: [{ id: 7, name: 'Artist' }] })
 const music = () => toNewMusicInfo(raw()) as LX.Music.MusicInfoOnline
@@ -73,5 +81,17 @@ describe('ID-based catalog adapter', () => {
     const adapter = createCatalogAdapter({ wy: { artist: vi.fn(async() => ({ list: undefined as any })) } })
     await expect(adapter.load(target)).rejects.toMatchObject({ code: 'response' })
     await expect(adapter.load(target, 0)).rejects.toMatchObject({ code: 'metadata' })
+  })
+})
+
+
+describe('catalog error localization', () => {
+  it('uses the current locale for provider and metadata errors', async() => {
+    window.i18n.setLanguage('en-us')
+    const adapter = createCatalogAdapter({ wy: { artist: vi.fn() } })
+    await expect(adapter.resolve('album', music())).rejects.toMatchObject({ message: 'Provider wy does not support album catalogs' })
+    const input = music()
+    delete input.meta.artists
+    await expect(adapter.resolve('artist', input)).rejects.toMatchObject({ message: 'Song details do not include an exact artist ID, so the full catalog cannot be opened' })
   })
 })

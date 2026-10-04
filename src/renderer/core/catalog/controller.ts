@@ -20,7 +20,7 @@ export const createCatalogController = (state: ReturnType<typeof createCatalogSt
   let revision = 0
   let origin: { kind: CatalogKind, music: LX.Music.MusicInfo } | null = null
   const reportError = (error: unknown) => {
-    state.error = error instanceof CatalogError ? error.message : '目录加载失败，请重试'
+    state.error = error instanceof CatalogError ? error.message : window.i18n.t('catalog__load_error')
   }
   const loadMore = async() => {
     if (!state.show || !state.target || state.loading || !state.hasMore) return
@@ -36,7 +36,7 @@ export const createCatalogController = (state: ReturnType<typeof createCatalogSt
         ids.add(item.id)
         return true
       })
-      if (!additions.length && result.hasMore) throw new CatalogError('response', '提供方未返回新的目录歌曲，请重试；已加载内容仍可使用')
+      if (!additions.length && result.hasMore) throw new CatalogError('response', window.i18n.t('catalog__no_new_songs'))
       state.list = [...state.list, ...additions]
       state.page = result.page
       state.limit = result.limit
@@ -51,7 +51,7 @@ export const createCatalogController = (state: ReturnType<typeof createCatalogSt
   const select = async(target: CatalogTarget) => {
     ++revision
     state.target = target
-    state.title = `${target.name} · ${target.kind === 'artist' ? '艺人歌曲' : '专辑歌曲'} · ${target.source}`
+    state.title = window.i18n.t(target.kind === 'artist' ? 'catalog__artist_title' : 'catalog__album_title', { name: target.name }) + ` · ${target.source}`
     state.loading = false
     state.error = ''
     state.list = []
@@ -67,7 +67,7 @@ export const createCatalogController = (state: ReturnType<typeof createCatalogSt
     Object.assign(state, createCatalogState(), {
       show: true,
       loading: true,
-      title: `${kind === 'artist' ? music.singer : music.meta.albumName} · ${kind === 'artist' ? '艺人歌曲' : '专辑歌曲'}`,
+      title: window.i18n.t(kind === 'artist' ? 'catalog__artist_title' : 'catalog__album_title', { name: kind === 'artist' ? music.singer : music.meta.albumName }),
     })
     try {
       const targets = await adapter.resolve(kind, music)

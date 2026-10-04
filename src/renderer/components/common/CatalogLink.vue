@@ -1,16 +1,19 @@
 <template>
-  <button type="button" :class="$style.link" :aria-label="`打开${kind === 'artist' ? '艺人' : '专辑'}目录：${label}`" @click.stop="openMusicCatalog(kind, effectiveMusic)" @dblclick.stop>
+  <button type="button" :class="$style.link" :aria-label="$t(kind === 'artist' ? 'catalog__open_artist' : 'catalog__open_album', { name: label })" @click.stop="openMusicCatalog(kind, effectiveMusic)" @dblclick.stop>
     {{ label }}
   </button>
 </template>
 
 <script setup lang="ts">
 import { computed } from '@common/utils/vueTools'
+import { useI18n } from '@renderer/plugins/i18n'
+import { getPreferredMusicInfo } from '@renderer/core/music/version'
 import { openMusicCatalog } from '@renderer/core/catalog'
 import { type CatalogKind } from '@renderer/core/catalog/types'
-const props = defineProps<{ kind: CatalogKind, music: LX.Music.MusicInfo }>()
-const effectiveMusic = computed(() => props.music.meta.toggleMusicInfo ?? props.music)
-const label = computed(() => (props.kind === 'artist' ? effectiveMusic.value.singer : effectiveMusic.value.meta.albumName) || '未知')
+const props = defineProps<{ kind: CatalogKind, music: LX.Music.MusicInfo | LX.Download.ListItem }>()
+const t = useI18n()
+const effectiveMusic = computed(() => getPreferredMusicInfo(props.music))
+const label = computed(() => (props.kind === 'artist' ? effectiveMusic.value.singer : effectiveMusic.value.meta.albumName) || t('catalog__unknown'))
 </script>
 
 <style module>

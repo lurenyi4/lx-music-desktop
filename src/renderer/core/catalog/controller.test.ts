@@ -1,6 +1,14 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createI18n } from '../../../lang'
 import { createCatalogController, createCatalogState } from './controller'
 import { type CatalogPage, type CatalogTarget } from './types'
+beforeEach(() => {
+  const i18n = createI18n()
+  i18n.setLanguage('zh-cn')
+  vi.stubGlobal('window', { i18n })
+})
+afterEach(() => { vi.unstubAllGlobals() })
+
 const song = (id: string): LX.Music.MusicInfoOnline => ({ id, source: 'wy', name: id, singer: 'Artist', interval: null, meta: { songId: id, albumName: 'Album', qualitys: [], _qualitys: {} } })
 const target: CatalogTarget = { kind: 'artist', source: 'wy', id: 7, name: 'Artist' }
 const page = (id: string, num = 1, more = false): CatalogPage => ({ list: [song(id)], page: num, limit: 1, total: 2, hasMore: more })
@@ -70,5 +78,17 @@ describe('catalog request lifecycle', () => {
     expect(state.error).toContain('未返回新的')
     expect(state.hasMore).toBe(true)
     expect(state.page).toBe(1)
+  })
+})
+
+
+describe('catalog state localization', () => {
+  it('uses the current locale for titles and retry errors', async() => {
+    window.i18n.setLanguage('en-us')
+    const state = createCatalogState()
+    const controller = createCatalogController(state, { resolve: async() => [target], load: async() => { throw Error('offline') } })
+    await controller.open('artist', song('origin'))
+    expect(state.title).toBe('Artist · Artist songs · wy')
+    expect(state.error).toBe('Could not load the catalog. Please retry')
   })
 })

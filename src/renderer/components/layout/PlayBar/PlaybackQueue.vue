@@ -1,20 +1,21 @@
 <template>
-  <button type="button" :class="$style.entry" aria-label="当前播放队列" :title="playMusicInfo.versionNotice || '查看下一首与播放队列'" @click="show = true">队列<span v-if="playMusicInfo.versionNotice"> · 临时版本</span></button>
+  <button type="button" :class="$style.entry" :aria-label="$t('player__queue_title')" :title="playMusicInfo.versionNotice || $t('player__queue_open_tip')" @click="show = true">{{ $t('player__queue') }}<span v-if="playMusicInfo.versionNotice"> · {{ $t('player__temporary_version') }}</span></button>
   <material-modal :show="show" teleport="#root" @close="show = false">
-    <section :class="$style.panel" aria-label="当前播放队列">
-      <h2>当前播放队列</h2>
-      <p v-if="playMusicInfo.musicInfo">正在播放：{{ label(playMusicInfo.musicInfo) }}</p>
+    <section :class="$style.panel" :aria-label="$t('player__queue_title')">
+      <h2>{{ $t('player__queue_title') }}</h2>
+      <p v-if="playMusicInfo.musicInfo">{{ $t('player__queue_now_playing', { name: label(playMusicInfo.musicInfo) }) }}</p>
       <p v-if="playMusicInfo.versionNotice" role="status">{{ playMusicInfo.versionNotice }}</p>
-      <p v-if="error" role="alert">队列加载失败，请重试 <button type="button" @click="refresh">重试</button></p>
+      <p v-if="error" role="alert">{{ $t('player__queue_load_error') }} <button type="button" @click="refresh">{{ $t('retry') }}</button></p>
       <template v-else>
-        <p>下一首：{{ next ? label(next.musicInfo) : '无（播放结束后停止）' }}</p>
-        <p v-if="random">随机播放：下方先显示已排定歌曲，其余歌曲将在切歌时决定</p>
-        <p v-else-if="appSetting['player.togglePlayMethod'] === 'listLoop'">按以下顺序播放，列表结束后循环</p>
-        <ol :class="$style.list"><li v-for="(item, index) in entries" :key="`${index}-${item.musicInfo.id}`">{{ label(item.musicInfo) }}<span v-if="item.isTempPlay"> · 已排队</span></li></ol>
-        <p v-if="!entries.length">暂无后续歌曲</p>
+        <p>{{ $t('player__queue_next', { name: next ? label(next.musicInfo) : $t('player__queue_no_next') }) }}</p>
+        <p v-if="random">{{ $t('player__queue_random_tip') }}</p>
+        <p v-else-if="appSetting['player.togglePlayMethod'] === 'listLoop' && playInfo.playerListId !== null">{{ $t('player__queue_loop_tip') }}</p>
+        <p v-else-if="playInfo.playerListId === null">{{ $t('player__queue_stop_tip') }}</p>
+        <ol :class="$style.list"><li v-for="(item, index) in entries" :key="`${index}-${item.musicInfo.id}`">{{ label(item.musicInfo) }}<span v-if="item.isTempPlay"> · {{ $t('player__queue_pending') }}</span></li></ol>
+        <p v-if="!entries.length">{{ $t('player__queue_empty') }}</p>
       </template>
-      <button v-if="tempPlayList.length" type="button" @click="clearPending">清空待播队列</button>
-      <button type="button" @click="show = false">关闭</button>
+      <button v-if="tempPlayList.length" type="button" @click="clearPending">{{ $t('player__queue_clear') }}</button>
+      <button type="button" @click="show = false">{{ $t('close') }}</button>
     </section>
   </material-modal>
 </template>
@@ -24,6 +25,7 @@ import { ref, watch, onBeforeUnmount } from '@common/utils/vueTools'
 import { playMusicInfo, playInfo, tempPlayList } from '@renderer/store/player/state'
 import { clearTempPlayeList } from '@renderer/store/player/action'
 import { appSetting } from '@renderer/store/setting'
+import { getPreferredMusicInfo } from '@renderer/core/music/version'
 import { getPlaybackQueue } from '@renderer/core/player/queue'
 
 const show = ref(false)
@@ -33,8 +35,7 @@ const random = ref(false)
 const error = ref(false)
 let request = 0
 const label = (music: LX.Music.MusicInfo | LX.Download.ListItem) => {
-  const info = 'progress' in music ? music.metadata.musicInfo : music
-  const selected = info.meta.toggleMusicInfo ?? info
+  const selected = getPreferredMusicInfo(music)
   return `${selected.name} · ${selected.singer}`
 }
 const refresh = async() => {

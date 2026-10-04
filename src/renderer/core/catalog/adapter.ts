@@ -12,7 +12,7 @@ const validId = (id: unknown): id is string | number =>
 export const createCatalogAdapter = (providers: CatalogProviders) => ({
   async resolve(kind: CatalogKind, music: LX.Music.MusicInfo): Promise<CatalogTarget[]> {
     if (music.source === 'local' || !providers[music.source]?.[kind]) {
-      throw new CatalogError('unsupported', `当前提供方 ${music.source} 暂不支持${kind === 'artist' ? '艺人' : '专辑'}目录`)
+      throw new CatalogError('unsupported', window.i18n.t(kind === 'artist' ? 'catalog__unsupported_artist' : 'catalog__unsupported_album', { source: music.source }))
     }
     const provider = providers[music.source]!
     let metadata = music.meta
@@ -24,8 +24,8 @@ export const createCatalogAdapter = (providers: CatalogProviders) => ({
       if (detail) metadata = { ...metadata, ...detail }
     }
     if (kind === 'album') {
-      if (!validId(metadata.albumId)) throw new CatalogError('metadata', '缺少准确的专辑 ID，无法打开完整目录')
-      return [{ kind, source: music.source, id: metadata.albumId, name: metadata.albumName || music.meta.albumName || '专辑' }]
+      if (!validId(metadata.albumId)) throw new CatalogError('metadata', window.i18n.t('catalog__missing_album_id'))
+      return [{ kind, source: music.source, id: metadata.albumId, name: metadata.albumName || music.meta.albumName || window.i18n.t('catalog__album') }]
     }
     const seen = new Set<string>()
     const artists = metadata.artists?.filter(artist => {
@@ -33,19 +33,19 @@ export const createCatalogAdapter = (providers: CatalogProviders) => ({
       seen.add(String(artist.id))
       return true
     }) ?? []
-    if (!artists.length) throw new CatalogError('metadata', '歌曲详情未提供准确的艺人 ID，无法打开完整目录')
+    if (!artists.length) throw new CatalogError('metadata', window.i18n.t('catalog__missing_artist_id'))
     return artists.map(artist => ({ kind, source: music.source, id: artist.id, name: artist.name }))
   },
 
   async load(target: CatalogTarget, page = 1, limit = 50): Promise<CatalogPage> {
     const provider = providers[target.source]
     const fetchPage = provider?.[target.kind]
-    if (!fetchPage) throw new CatalogError('unsupported', '当前提供方暂不支持此目录')
+    if (!fetchPage) throw new CatalogError('unsupported', window.i18n.t('catalog__unsupported'))
     if (!validId(target.id) || !Number.isInteger(page) || page < 1 || !Number.isInteger(limit) || limit < 1) {
-      throw new CatalogError('metadata', '目录参数无效')
+      throw new CatalogError('metadata', window.i18n.t('catalog__invalid_parameters'))
     }
     const result = await fetchPage(target.id, page, limit)
-    if (!Array.isArray(result?.list)) throw new CatalogError('response', '提供方返回的目录格式无效')
+    if (!Array.isArray(result?.list)) throw new CatalogError('response', window.i18n.t('catalog__invalid_response'))
     const totalValue = result.total == null ? NaN : Number(result.total)
     const total = Number.isFinite(totalValue) && totalValue >= 0 ? totalValue : null
     const responseLimit = Number(result.limit)
