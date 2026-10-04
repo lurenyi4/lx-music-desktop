@@ -17,8 +17,8 @@ export const catalogAdapter = createCatalogAdapter({
   wy: {
     artist: (id, page, limit) => wySinger.getSongList(id, page, limit),
     detail: async(music) => {
-      // The legacy JS request gains promise dynamically, which its inferred type omits.
-      const request = getWyMusicInfo(music.meta.songId) as ReturnType<typeof getWyMusicInfo> & {
+      // The legacy JS request adds promise dynamically; type only the response we consume.
+      const request = getWyMusicInfo(music.meta.songId) as unknown as {
         promise: Promise<{ ar?: LX.Music.CatalogArtist[], al?: { id: number, name: string } }>
       }
       const raw = await request.promise
