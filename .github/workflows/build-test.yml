@@ -10,6 +10,7 @@ on:
       - dev
       - master
       - 'feature/**'
+      - 'feat/playback-version-queue-catalog'
       - 'fix/**'
       - 'codex/**'
 
