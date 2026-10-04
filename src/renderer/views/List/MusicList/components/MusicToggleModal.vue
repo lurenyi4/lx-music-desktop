@@ -48,7 +48,7 @@
             <h2>
               <div :class="$style.nameLabel">
                 <span :class="$style.name">{{ toggleMusicInfo.name }}</span>
-                <span :class="$style.label">{{ toggleMusicInfo.source }} {{ musicInfo.interval }}</span>
+                <span :class="$style.label">{{ toggleMusicInfo.source }} {{ toggleMusicInfo.interval }}</span>
               </div>
               <div :class="$style.singer">
                 {{ toggleMusicInfo.singer }}

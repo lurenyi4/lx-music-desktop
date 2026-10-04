@@ -79,3 +79,11 @@ it('actual preview and confirm methods reach the collection hook with the origin
   expect(saved.meta.toggleMusicInfo?.id).toBe('b')
   expect(restartSelectedVersion).toHaveBeenLastCalledWith('love', saved, { musicInfo: b, isTempPlay: false })
 })
+
+it('candidate duration uses the candidate version when A and B have different lengths', () => {
+  const musicInfo = { ...song('a'), interval: '03:10' }
+  const toggleMusicInfo = { ...song('b'), interval: '04:25' }
+  const candidateLabel = source.match(/<span[^>]*>{{ toggleMusicInfo.source }} ([\s\S]*?)<\/span>/)![1]
+  const rendered = candidateLabel.replace(/{{ (.*?) }}/g, (_, expression: string) => vm.runInNewContext(expression, { musicInfo, toggleMusicInfo }))
+  expect(rendered).toBe('04:25')
+})
