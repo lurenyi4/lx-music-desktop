@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   saveMetrics: vi.fn(),
   setting: { 'recommend.radio': false, 'recommend.autoRefill': false, 'recommend.engine': 'local', 'recommend.radius': 50, 'ai.enable': false },
 }))
-vi.mock('@renderer/store/player/state', () => ({ playMusicInfo: mocks.player, isPlay: mocks.playing, tempPlayList: mocks.queue }))
+vi.mock('@renderer/store/player/state', () => ({ playInfo: { isSelectionQueue: false }, playMusicInfo: mocks.player, isPlay: mocks.playing, tempPlayList: mocks.queue }))
 vi.mock('@renderer/store/player/playProgress', () => ({ playProgress: mocks.progress }))
 vi.mock('@renderer/store/setting', async() => ({ appSetting: (await import('vue')).reactive(mocks.setting) }))
 vi.mock('@renderer/utils/data', () => ({

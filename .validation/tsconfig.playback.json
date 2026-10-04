@@ -19,7 +19,8 @@
     "../src/renderer/views/List/MusicList/useMusicToggle.js",
     "../src/renderer/core/recommend/session.ts",
     "../src/renderer/views/List/MusicList/index.vue",
-    "../src/renderer/views/List/MusicList/components/MusicToggleModal.vue"
+    "../src/renderer/views/List/MusicList/components/MusicToggleModal.vue",
+    "../src/renderer/views/Explore/index.vue"
   ],
   "exclude": [
     "../node_modules",

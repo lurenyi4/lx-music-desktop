@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   queue: [] as any[],
   played: [] as any[],
   player: { musicInfo: null as any, listId: null as string | null, isTempPlay: false, alternativeMusicInfos: undefined },
-  playInfo: { playerListId: 'old' as string | null, playerPlayIndex: 0 },
+  playInfo: { playerListId: 'old' as string | null, playerPlayIndex: 0, isSelectionQueue: false },
   setting: { 'recommend.radio': false, 'recommend.radius': 50, 'recommend.autoRefill': true, 'ai.enable': false, 'recommend.engine': 'local', 'player.togglePlayMethod': 'list' },
 }))
 vi.mock('./engine', () => ({ exploreOnce: mocks.explore }))
@@ -27,7 +27,7 @@ vi.mock('@renderer/store/player/action', () => ({
   removeTempPlayList: (index: number) => mocks.queue.splice(index, 1),
   clearTempPlayeList: () => mocks.queue.splice(0),
   clearPlayedList: () => mocks.played.splice(0),
-  getList: () => [],
+  getList: () => [song('normal')],
   setPlayListId: (id: string | null) => { mocks.playInfo.playerListId = id },
   setPlayMusicInfo: (listId: string | null, musicInfo: any, isTempPlay = false, alternativeMusicInfos?: any, reason = 'user') => {
     Object.assign(mocks.player, { listId, musicInfo, isTempPlay, alternativeMusicInfos })
@@ -56,6 +56,7 @@ let setting: any
 beforeEach(async() => {
   vi.resetModules(); vi.clearAllMocks(); vi.useFakeTimers()
   Object.assign(mocks.setting, { 'recommend.radio': false, 'recommend.autoRefill': true })
+  mocks.playInfo.isSelectionQueue = false
   mocks.queue.splice(0); mocks.played.splice(0)
   Object.assign(mocks.player, { musicInfo: song('anchor'), listId: 'original', isTempPlay: false })
   const events = new EventEmitter()
@@ -79,7 +80,8 @@ it.each([false, true])('explicit selection invalidates old inflight recommendati
   for (let i = 0; i < 20; i++) await Promise.resolve()
   expect(release).toBeDefined()
   player.playMusicSelection([song('one'), song('two')], 'selected')
-  expect(setting['recommend.radio']).toBe(false)
+  expect(setting['recommend.radio']).toBe(radio)
+  expect(mocks.updateSetting).not.toHaveBeenCalled()
   expect(mocks.queue.map(item => item.musicInfo.id)).toEqual(['two'])
   release(result('late-radio'))
   await vi.advanceTimersByTimeAsync(5000)
@@ -91,6 +93,7 @@ it.each([false, true])('explicit selection invalidates old inflight recommendati
   await player.playNext(true); await vi.runOnlyPendingTimersAsync()
   expect(mocks.player.musicInfo).toBeNull()
   expect(mocks.explore).toHaveBeenCalledOnce()
+  expect(mocks.playInfo.isSelectionQueue).toBe(true)
 })
 it('an explicit radio start after selection can resume recommendation production', async() => {
   mocks.explore.mockResolvedValue(result('fresh-radio'))
@@ -98,4 +101,34 @@ it('an explicit radio start after selection can resume recommendation production
   setting['recommend.radio'] = true
   await nextTick(); for (let i = 0; i < 30; i++) await Promise.resolve()
   expect(mocks.queue.map(item => item.musicInfo.id)).toContain('fresh-radio')
+})
+
+it('explicit ordinary list playback resumes radio after a finite queue without rewriting its preference', async() => {
+  setting['recommend.radio'] = true
+  mocks.explore.mockResolvedValue(result('recommendation'))
+  await nextTick()
+  for (let i = 0; i < 30; i++) await Promise.resolve()
+  player.playMusicSelection([song('selected')], 'user')
+  expect(mocks.playInfo.isSelectionQueue).toBe(true)
+  const calls = mocks.explore.mock.calls.length
+  player.playList('normal-list', 0)
+  await vi.advanceTimersByTimeAsync(2000)
+  for (let i = 0; i < 30; i++) await Promise.resolve()
+  expect(mocks.playInfo.isSelectionQueue).toBe(false)
+  expect(setting['recommend.radio']).toBe(true)
+  expect(mocks.updateSetting).not.toHaveBeenCalled()
+  expect(mocks.explore.mock.calls.length).toBeGreaterThan(calls)
+})
+it('explicitly starting an already-enabled radio lifts only the temporary selection pause', async() => {
+  setting['recommend.radio'] = true
+  mocks.explore.mockResolvedValue(result('recommendation'))
+  await nextTick()
+  for (let i = 0; i < 30; i++) await Promise.resolve()
+  player.playMusicSelection([song('selected')], 'user')
+  expect(mocks.playInfo.isSelectionQueue).toBe(true)
+  await session.startSession()
+  expect(mocks.playInfo.isSelectionQueue).toBe(false)
+  expect(setting['recommend.radio']).toBe(true)
+  expect(mocks.queue.map(item => item.musicInfo.id)).toContain('recommendation')
+  expect(mocks.updateSetting).not.toHaveBeenCalled()
 })

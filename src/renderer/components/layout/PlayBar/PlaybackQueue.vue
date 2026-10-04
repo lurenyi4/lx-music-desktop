@@ -4,6 +4,7 @@
     <section :class="$style.panel" :aria-label="$t('player__queue_title')">
       <h2>{{ $t('player__queue_title') }}</h2>
       <p v-if="playMusicInfo.musicInfo">{{ $t('player__queue_now_playing', { name: label(playMusicInfo.musicInfo) }) }}</p>
+      <p v-if="playInfo.isSelectionQueue" role="status">{{ $t('player__queue_radio_paused') }}</p>
       <p v-if="playMusicInfo.versionNotice" role="status">{{ playMusicInfo.versionNotice }}</p>
       <p v-if="error" role="alert">{{ $t('player__queue_load_error') }} <button type="button" @click="refresh">{{ $t('retry') }}</button></p>
       <template v-else>

@@ -235,6 +235,7 @@ export const playListById = (listId: string, id: string) => {
   // pause()
   const musicInfo = getList(listId).find(m => m.id == id)
   if (!musicInfo) return
+  playInfo.isSelectionQueue = false
   setPlayMusicInfo(listId, musicInfo)
   if (appSetting['player.isAutoCleanPlayedList'] || prevListId != listId) clearPlayedList()
   clearTempPlayeList()
@@ -250,6 +251,7 @@ export const playList = (listId: string, index: number) => {
   const prevListId = playInfo.playerListId
   setPlayListId(listId)
   // pause()
+  playInfo.isSelectionQueue = false
   setPlayMusicInfo(listId, getList(listId)[index])
   if (appSetting['player.isAutoCleanPlayedList'] || prevListId != listId) clearPlayedList()
   clearTempPlayeList()
@@ -388,6 +390,7 @@ export const playMusicSelection = (list: Array<LX.Music.MusicInfo | LX.Download.
   if (!list.length) return
   clearTempPlayeList()
   clearPlayedList()
+  playInfo.isSelectionQueue = true
   setPlayListId(null)
   setPlayMusicInfo(listId, list[0], true, undefined, 'selection')
   addTempPlayList(list.slice(1).map(musicInfo => ({ listId, musicInfo })))

@@ -18,8 +18,8 @@
 import { LIST_IDS } from '@common/constants'
 import { normalizeRecommendEngine } from '@common/recommendationConfig'
 import { computed, ref, watch } from '@common/utils/vueTools'
-import { appSetting, updateSetting } from '@renderer/store/setting'
-import { isPlay, playMusicInfo, tempPlayList } from '@renderer/store/player/state'
+import { appSetting } from '@renderer/store/setting'
+import { isPlay, playInfo, playMusicInfo, tempPlayList } from '@renderer/store/player/state'
 import { addTempPlayList, removeTempPlayList } from '@renderer/store/player/action'
 import { playMusicInfoNow } from '@renderer/core/player'
 import { getRecommendMetrics, saveRecommendMetrics } from '@renderer/utils/data'
@@ -676,12 +676,10 @@ const handleMusicToggled = (reason: LX.Player.MusicChangeReason = 'user'): void 
   // Stop synchronously before playback enqueues the remaining selection; epoch invalidates old requests.
   if (reason === 'selection') {
     emitSongChangeMetrics(currentMusic(), false, 'user')
-    const wasEnabled = appSetting['recommend.radio']
-    appSetting['recommend.radio'] = false
     endSession()
-    if (wasEnabled) updateSetting({ 'recommend.radio': false })
     return
   }
+  if (playInfo.isSelectionQueue) return
   const st = state.value
   const play = currentMusic()
   // SongChangeSong 已裁剪为判定实际消费的 id；宽对象经变量透传（结构类型兼容），不再逐字段复制
@@ -764,6 +762,7 @@ const subscribeMusicToggled = (): void => {
 export const startSession = async(): Promise<void> => {
   const play = currentMusic()
   if (!play) throw new Error('请先播放歌曲')
+  playInfo.isSelectionQueue = false
   const st = state.value
   if (st) {
     // 锚点一致 → 幂等返回（用户点了播放栏按钮只是跳转页面，不打断当前会话）

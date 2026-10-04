@@ -18,7 +18,10 @@
     "../src/renderer/views/List/MusicList/components/MusicToggleModal.test.ts",
     "../src/renderer/views/List/MusicList/useMusicToggle.test.ts",
     "../src/common/types/**/*.d.ts",
-    "../src/renderer/types/**/*.d.ts"
+    "../src/renderer/types/**/*.d.ts",
+    "../src/renderer/core/recommend/session.test.ts",
+    "../src/renderer/core/recommend/platformSession.test.ts",
+    "../src/renderer/core/recommend/listeningSignals.test.ts"
   ],
   "exclude": [
     "../node_modules"

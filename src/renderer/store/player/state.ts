@@ -62,6 +62,7 @@ export const playMusicInfo = shallowReactive<{
   isTempPlay: false,
 })
 export const playInfo = shallowReactive<LX.Player.PlayInfo>({
+  isSelectionQueue: false,
   playIndex: -1,
   playerListId: null,
   playerPlayIndex: -1,

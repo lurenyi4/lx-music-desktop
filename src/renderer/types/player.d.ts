@@ -21,6 +21,8 @@ declare namespace LX {
     }
 
     interface PlayInfo {
+      /** Runtime-only finite selection; remains stopped until explicit normal playback or radio start. */
+      isSelectionQueue?: boolean
       /**
        * 当前正在播放歌曲 index
        */

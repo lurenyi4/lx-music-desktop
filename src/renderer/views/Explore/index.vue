@@ -3,9 +3,10 @@
     <!-- 无会话：空态 / 开始入口 -->
     <div v-if="!sessionView.active" :class="$style.empty">
       <p v-if="lastErrorText" :class="$style.error">{{ lastErrorText }}</p>
+      <p v-if="playInfo.isSelectionQueue">{{ t('player__queue_radio_paused') }}</p>
       <p>{{ hasPlaying ? t('explore__ready_tip') : t('explore__no_playing') }}</p>
       <!-- 电台已开时置灰：同值写入不触发 session 层 watch 属设计使然，收台后的恢复路径是切歌自动重开或播放栏开关 -->
-      <button :class="[$style.btn, { [$style.disabled]: !hasPlaying }]" :disabled="!hasPlaying || appSetting['recommend.radio']" @click="handleStart">
+      <button :class="[$style.btn, { [$style.disabled]: !hasPlaying }]" :disabled="!hasPlaying || (appSetting['recommend.radio'] && !playInfo.isSelectionQueue)" @click="handleStart">
         {{ t('explore__start') }}
       </button>
     </div>
@@ -103,7 +104,7 @@
 import { computed, ref, watch } from '@common/utils/vueTools'
 import { normalizeRecommendEngine } from '@common/recommendationConfig'
 import { useI18n } from '@renderer/plugins/i18n'
-import { playMusicInfo } from '@renderer/store/player/state'
+import { playMusicInfo, playInfo } from '@renderer/store/player/state'
 import { appSetting, updateSetting } from '@renderer/store/setting'
 import {
   applyFeedback,
@@ -116,6 +117,7 @@ import {
   playPathItem,
   refillState,
   sessionView,
+  startSession,
   setInstruction,
   setRadius,
 } from '@renderer/core/recommend/session'
@@ -222,6 +224,10 @@ const roleLabel = (role: string): string => {
 // 开始/结束同源于电台开关（D10 双入口单源）：本页只写 recommend.radio，
 // 开台（含收台后空态的 lastErrorText 展示）与收台清场统一由 session 层 watch 响应，不直接调 session
 const handleStart = () => {
+  if (playInfo.isSelectionQueue && appSetting['recommend.radio']) {
+    void startSession().catch(console.warn)
+    return
+  }
   updateSetting({ 'recommend.radio': true })
 }
 

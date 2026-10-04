@@ -858,5 +858,6 @@
   "user_api_import_online__input_confirm": "导入",
   "user_api_import_online__input_loading": "导入中...",
   "user_api_import_online__input_tip": "请输入 HTTP 链接",
-  "user_api_import_online__title": "在线导入自定义源"
+  "user_api_import_online__title": "在线导入自定义源",
+  "player__queue_radio_paused": "此批次只播放所选歌曲，暂不续推荐；原电台偏好保留。播放普通列表或主动开台可恢复。"
 }

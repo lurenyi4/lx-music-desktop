@@ -858,5 +858,6 @@
   "user_api_import_online__input_confirm": "가져오기",
   "user_api_import_online__input_loading": "가져오는 중...",
   "user_api_import_online__input_tip": "HTTP 링크를 입력하세요",
-  "user_api_import_online__title": "네트워크에서 음악 API 가져오기"
+  "user_api_import_online__title": "네트워크에서 음악 API 가져오기",
+  "player__queue_radio_paused": "이번 선택 항목만 재생합니다. 라디오 설정은 유지되며 추천은 일시 중지됩니다. 일반 목록을 재생하거나 라디오를 시작하면 다시 활성화됩니다."
 }

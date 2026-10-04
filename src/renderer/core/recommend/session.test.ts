@@ -24,7 +24,7 @@ vi.mock('@renderer/store/setting', async() => {
   const { reactive } = await import('vue')
   return { appSetting: reactive(mocks.setting) }
 })
-vi.mock('@renderer/store/player/state', () => ({ playMusicInfo: mocks.player, tempPlayList: mocks.queue, isPlay: mocks.playing }))
+vi.mock('@renderer/store/player/state', () => ({ playInfo: { isSelectionQueue: false }, playMusicInfo: mocks.player, tempPlayList: mocks.queue, isPlay: mocks.playing }))
 vi.mock('@renderer/store/player/action', () => ({ addTempPlayList: mocks.addQueue, removeTempPlayList: mocks.removeQueue }))
 vi.mock('@renderer/core/player', () => ({ playMusicInfoNow: mocks.playNow }))
 vi.mock('@renderer/utils/data', () => ({ getRecommendMetrics: async() => null, saveRecommendMetrics: mocks.saveMetrics }))
