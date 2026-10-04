@@ -126,6 +126,7 @@ export default {
 
     return {
       musicInfo,
+      playMusicInfo,
       nowPlayTimeStr,
       maxPlayTimeStr,
       progress,
