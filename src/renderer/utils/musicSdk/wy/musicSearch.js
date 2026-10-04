@@ -79,6 +79,7 @@ export default {
 
       return {
         singer: this.getSinger(item.ar),
+        artists: item.ar?.map(artist => ({ id: artist.id, name: artist.name })),
         name: item.name,
         albumName: item.al.name,
         albumId: item.al.id,

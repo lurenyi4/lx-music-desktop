@@ -13,7 +13,7 @@ const createGetMusicInfosTask = (hashs) => {
     dfid: '-',
     clienttime: Date.now(),
     key: 'OIlwieks28dk2k092lksi2UIkp',
-    fields: 'album_info,author_name,audio_info,ori_audio_name,base,songname,classification',
+    fields: 'album_info,authors,author_name,audio_info,ori_audio_name,base,songname,classification',
   }
   let list = hashs
   let tasks = []
@@ -81,6 +81,7 @@ export const filterMusicInfoList = (rawList) => {
     }
     list.push({
       singer: decodeName(item.author_name),
+      artists: item.authors?.map(artist => ({ id: artist.author_id, name: decodeName(artist.author_name) })),
       name: decodeName(item.songname),
       albumName: decodeName(item.album_info.album_name),
       albumId: item.album_info.album_id,
