@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import { beforeEach, expect, it, vi } from 'vitest'
 import useDownloadPlay from '@renderer/views/Download/usePlay'
 import useLocalPlay from '@renderer/views/List/MusicList/usePlay'
@@ -14,7 +15,7 @@ const song = (id: string): LX.Music.MusicInfoOnline => ({ id, name: id, singer: 
 beforeEach(() => { vi.clearAllMocks() })
 it.each(['local', 'online'])('%s selection uses visible sorted order rather than click order or default list positions', async(kind) => {
   const list = [song('c'), song('b'), song('a')]
-  const selectedList = { value: [list[2], list[0]] }
+  const selectedList = ref([list[2], list[0]])
   const removeAllSelect = vi.fn()
   const hook = kind === 'local'
     ? useLocalPlay({ props: { listId: 'user' }, selectedList, list: { value: list }, removeAllSelect })
@@ -27,7 +28,7 @@ it.each(['local', 'online'])('%s selection uses visible sorted order rather than
 })
 it.each(['local', 'online'])('%s explicit single click does not enqueue the selection', async(kind) => {
   const list = [song('a'), song('b')]
-  const options = { selectedList: { value: [list[1]] }, removeAllSelect: vi.fn() }
+  const options = { selectedList: ref([list[1]]), removeAllSelect: vi.fn() }
   const hook = kind === 'local'
     ? useLocalPlay({ ...options, props: { listId: 'user' }, list: { value: list } })
     : useOnlinePlay({ ...options, props: { list }, emit: vi.fn() })

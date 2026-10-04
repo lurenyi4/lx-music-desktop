@@ -13,15 +13,16 @@ vi.mock('@renderer/utils/ipc', () => ({ saveLyric: vi.fn(), saveMusicUrl: vi.fn(
 vi.mock('./utils', () => ({ handleGetOnlinePicUrl: vi.fn() }))
 vi.mock('./download', () => ({ getMusicUrl: vi.fn(), getPicUrl: vi.fn(), getLyricInfo: vi.fn() }))
 vi.mock('./local', () => ({ getMusicUrl: vi.fn(), getPicUrl: vi.fn(), getLyricInfo: vi.fn() }))
-const song = (id: string): LX.Music.MusicInfoOnline => ({ id, source: 'kw', name: id, singer: 'Artist', interval: null, meta: { songId: id, albumName: '', qualitys: [], _qualitys: {} } })
+const song = (id: string): LX.Music.MusicInfo_online_common => ({ id, source: 'kw', name: id, singer: 'Artist', interval: null, meta: { songId: id, albumName: '', qualitys: [], _qualitys: {} } })
 beforeEach(() => { vi.clearAllMocks(); state.list.splice(0) })
 it('A preferred as B cannot overwrite independently saved B preferred as C through cover fetching', async() => {
   const a = song('a'); const b = song('b'); const c = song('c')
-  a.meta.toggleMusicInfo = { ...b, meta: { ...b.meta } }; a.meta.manualVersionPinned = true
+  const preferred = { ...b, meta: { ...b.meta } }
+  a.meta.toggleMusicInfo = preferred; a.meta.manualVersionPinned = true
   b.meta.toggleMusicInfo = c; b.meta.manualVersionPinned = true
   state.list.push(a, b)
   const before = JSON.stringify(state.list)
-  vi.mocked(handleGetOnlinePicUrl).mockResolvedValue({ url: 'picture-b', musicInfo: a.meta.toggleMusicInfo, isFromCache: false })
+  vi.mocked(handleGetOnlinePicUrl).mockResolvedValue({ url: 'picture-b', musicInfo: preferred, isFromCache: false })
   await expect(getPicPath({ musicInfo: a, listId: 'love' })).resolves.toBe('picture-b')
   expect(updateListMusics).not.toHaveBeenCalled()
   expect(JSON.stringify(state.list)).toBe(before)

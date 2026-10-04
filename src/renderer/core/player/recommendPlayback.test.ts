@@ -35,7 +35,7 @@ vi.mock('@renderer/store/player/state', () => ({
 }))
 vi.mock('@renderer/store/player/action', () => ({
   getList: vi.fn(),
-  addTempPlayList: vi.fn(items => { tempPlayList.push(...items.map(item => ({ ...item, isTempPlay: true }))) }),
+  addTempPlayList: vi.fn((items: LX.Player.PlayMusicInfo[]) => { tempPlayList.push(...items.map(item => ({ ...item, isTempPlay: true }))) }),
   clearPlayedList: vi.fn(),
   clearTempPlayeList: vi.fn(() => { tempPlayList.splice(0) }),
   setPlayMusicInfo: vi.fn(),
@@ -100,7 +100,7 @@ it('下一曲消费 FIFO 队首一次，继续保持临时播放身份', async()
   expect(tempPlayList).toHaveLength(0)
 })
 
-const onlineSong = (id: string, source: 'kw' | 'wy' = 'kw'): LX.Music.MusicInfoOnline => ({
+const onlineSong = (id: string, source: 'kw' | 'wy' = 'kw'): LX.Music.MusicInfo_online_common => ({
   id,
   source,
   name: 'Song',

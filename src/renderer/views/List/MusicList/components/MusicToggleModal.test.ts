@@ -61,7 +61,7 @@ it('actual preview and confirm methods reach the collection hook with the origin
   const b = song('b')
   Object.assign(state, { musicInfo: a, listId: 'love', isTempPlay: false })
   const hook = useMusicToggle({ listId: 'love' }, { value: [a] })
-  hook.selectedToggleMusicInfo.value = a
+  hook.handleShowMusicToggleModal(0)
   let confirmation: Promise<void> | undefined
   const context: any = {
     toggleMusicInfo: null,

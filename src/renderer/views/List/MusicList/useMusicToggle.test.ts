@@ -16,7 +16,7 @@ it('manual choice updates metadata in place without replacing or removing collec
   playMusicInfo.musicInfo = original
   const list = { value: [original, selected] }
   const hook = useMusicToggle({ listId: 'love' }, list)
-  hook.selectedToggleMusicInfo.value = original
+  hook.handleShowMusicToggleModal(0)
   await hook.toggleSource(selected)
   const update = vi.mocked(updateListMusics).mock.calls[0][0][0]
   expect(update.id).toBe('love')
@@ -28,8 +28,10 @@ it('manual choice updates metadata in place without replacing or removing collec
   expect(restartSelectedVersion).toHaveBeenCalledWith('love', update.musicInfo)
 })
 it('a song removed while the chooser is open is not added back', async() => {
-  const hook = useMusicToggle({ listId: 'love' }, { value: [] })
-  hook.selectedToggleMusicInfo.value = song('removed')
+  const list = { value: [song('removed')] }
+  const hook = useMusicToggle({ listId: 'love' }, list)
+  hook.handleShowMusicToggleModal(0)
+  list.value.splice(0)
   await hook.toggleSource(song('selected'))
   expect(updateListMusics).not.toHaveBeenCalled()
 })
@@ -39,7 +41,7 @@ it('preview B then confirm must restore the original collection identity A', asy
   const selected = song('b')
   Object.assign(playMusicInfo, { musicInfo: original, listId: 'love', isTempPlay: false })
   const hook = useMusicToggle({ listId: 'love' }, { value: [original] })
-  hook.selectedToggleMusicInfo.value = original
+  hook.handleShowMusicToggleModal(0)
   // This event precedes the modal's real preview playNext call.
   hook.handlePreviewVersion(selected)
   Object.assign(playMusicInfo, { musicInfo: selected, listId: 'playLater', isTempPlay: true })
