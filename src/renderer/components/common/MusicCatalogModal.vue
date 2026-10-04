@@ -10,7 +10,7 @@
       <p v-if="catalogState.loading" :class="$style.status" role="status">{{ $t('catalog__loading') }}</p>
       <div v-if="catalogState.target" :class="$style.songs">
         <material-online-list
-          :key="`${catalogState.target.source}:${catalogState.target.kind}:${catalogState.target.id}`"
+          :key="`${catalogState.target?.source}:${catalogState.target?.kind}:${catalogState.target?.id}`"
           :list="catalogState.list" :page="1" :limit="Math.max(1, catalogState.list.length)" :total="catalogState.list.length"
           :no-item="!catalogState.loading && !catalogState.error && !catalogState.list.length ? $t('catalog__empty') : ''"
           check-api-source @play-list="playCatalogSong"
@@ -19,7 +19,7 @@
       <footer v-if="catalogState.target" :class="$style.footer">
         <span>{{ $t('catalog__loaded_count', { count: catalogState.list.length }) }}<span v-if="catalogState.total !== null"> · {{ $t('catalog__total_count', { count: catalogState.total }) }}</span></span>
         <base-btn v-if="catalogState.hasMore" :disabled="catalogState.loading" @click="catalogActions.loadMore">{{ $t('catalog__load_more') }}</base-btn>
-        <span v-else-if="!catalogState.loading && !catalogState.error">{{ $t(catalogState.total === null ? 'catalog__no_more' : catalogState.list.length < catalogState.total ? 'catalog__partial_end' : 'catalog__end') }}</span>
+        <span v-else-if="!catalogState.loading && !catalogState.error">{{ $t(catalogState.total === null ? 'catalog__no_more' : catalogState.list.length < (catalogState.total ?? 0) ? 'catalog__partial_end' : 'catalog__end') }}</span>
       </footer>
     </section>
   </material-modal>

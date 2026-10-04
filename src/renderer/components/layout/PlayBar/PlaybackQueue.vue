@@ -8,7 +8,7 @@
       <p v-if="playMusicInfo.versionNotice" role="status">{{ playMusicInfo.versionNotice }}</p>
       <p v-if="error" role="alert">{{ $t('player__queue_load_error') }} <button type="button" @click="refresh">{{ $t('retry') }}</button></p>
       <template v-else>
-        <p>{{ $t('player__queue_next', { name: next ? label(next.musicInfo) : $t('player__queue_no_next') }) }}</p>
+        <p>{{ $t('player__queue_next', { name: next ? label(next?.musicInfo) : $t('player__queue_no_next') }) }}</p>
         <p v-if="random">{{ $t('player__queue_random_tip') }}</p>
         <p v-else-if="appSetting['player.togglePlayMethod'] === 'listLoop' && playInfo.playerListId !== null">{{ $t('player__queue_loop_tip') }}</p>
         <p v-else-if="playInfo.playerListId === null">{{ $t('player__queue_stop_tip') }}</p>
@@ -35,7 +35,8 @@ const next = ref<LX.Player.PlayMusicInfo | null>(null)
 const random = ref(false)
 const error = ref(false)
 let request = 0
-const label = (music: LX.Music.MusicInfo | LX.Download.ListItem) => {
+const label = (music: LX.Music.MusicInfo | LX.Download.ListItem | null | undefined) => {
+  if (!music) return ''
   const selected = getPreferredMusicInfo(music)
   return `${selected.name} · ${selected.singer}`
 }
