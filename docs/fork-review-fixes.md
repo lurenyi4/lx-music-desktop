@@ -2,6 +2,12 @@
 
 ## 三端 CI 与原生依赖（2026-10-05）
 
+最终实现提交 `95472e581a066cbcd22214b3903e9cf92bed4805` 已通过
+[三端 CI run 37274748080](https://github.com/lurenyi4/lx-music-desktop/actions/runs/37274748080)：
+Windows、Linux、macOS 三个完整测试 job、七个无发布打包与包内架构检查 job，以及 `All platforms passed` 均成功。
+各端执行 901 项单测、22 项配置/provider 回归、SQLite smoke、lint、typecheck、生产构建、语言初始化检查和四条生产 Electron E2E。
+以下保留分阶段诊断与验证记录，其中“待重跑”描述的是当时状态；跨架构打包成功仍不等同于目标架构实机测试。
+
 `validate.yml` 作为 PR、分支构建和 release/beta 的共同验证入口，在 Windows、Linux、macOS
 分别运行 lint、typecheck、单测、生产构建和当前四条 Electron E2E。
 另在对应系统 runner 上打包 Windows/macOS x64 与 arm64、Linux x64/arm64/armv7l，显式禁止发布。

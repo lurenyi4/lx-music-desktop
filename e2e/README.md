@@ -3,6 +3,9 @@
 针对 T-A1~T-A3 / T-B0~T-B2 新能力的端到端测试，测试对象为 **dist 生产构建**。
 当前可执行回归门禁是 `npm run test:e2e`，它会先构建并依次运行平台推荐、电台、歌单同步和多活音源四条链路。
 
+2026-10-05 实现提交 `95472e58` 的 [三端 CI](https://github.com/lurenyi4/lx-music-desktop/actions/runs/37274748080)
+已全部通过，包括三端完整测试、七架构打包检查和统一门禁；跨架构产物检查不代表目标架构实机运行。
+
 GitHub Actions 的 `validate.yml` 在 Windows、Linux、macOS 原生 runner 上分别运行
 lint、typecheck、完整单测、生产构建和这四条 Electron E2E；Linux 使用 Xvfb。
 同步和多活音源套件还依赖 `sqlite3` CLI：CI 在 Linux 显式通过 apt 安装，Windows 从 Chocolatey
