@@ -2,6 +2,23 @@
 
 针对 T-A1~T-A3 / T-B0~T-B2 新能力的端到端测试，测试对象为 **dist 生产构建**。
 当前可执行回归门禁是 `npm run test:e2e`，它会先构建并依次运行平台推荐、电台、歌单同步和多活音源四条链路。
+
+GitHub Actions 的 `validate.yml` 在 Windows、Linux、macOS 原生 runner 上分别运行
+lint、typecheck、完整单测、生产构建和这四条 Electron E2E；Linux 使用 Xvfb。
+同步和多活音源套件还依赖 `sqlite3` CLI：CI 在 Linux 显式通过 apt 安装，Windows 从 Chocolatey
+社区官方源安装 `sqlite` 包并把 shim 目录写入 PATH，macOS 使用系统 CLI；三端运行 E2E 前均检查 `sqlite3 --version`。
+`npm run test:ci` 额外检查发布依赖关系，并在真实 Electron 中执行 SQLite 建表、插入和查询，
+以检测 Node/Electron ABI 错配。`npm ci` 的 postinstall 会将锁定包对应架构的 N-API 预编译绑定放到应用实际加载的路径；缺少预编译时按 Electron 版本重建。
+Windows 需要 Visual Studio C++ Build Tools；Linux 需要本地 C/C++ 工具链，macOS 需要 Xcode 命令行工具。
+
+验证另包含 Windows x64/arm64、macOS x64/arm64、Linux x64/arm64/armv7l 的无发布打包。
+跨架构打包仅验证包可生成，不表示目标架构已运行测试；Linux ARM 打包需要对应 GNU 交叉编译器。
+每个打包 job 还检查实际包内 ASAR 的 SQLite 绑定与 Electron 可执行文件的二进制架构，防止夹带宿主架构的原生模块。
+Windows 7 的旧 Electron 22 打包仍属于兼容产物，不代表 CI 在 Windows 7 实机运行过。
+三端测试和打包任一失败、取消或跳过，`All platforms passed` 门禁都会失败；
+release/beta 的全部发布或产物上传 job 必须等待同一次 workflow 对当前提交完成验证。
+各 E2E 套件独立运行于一个 step，Windows 发布准备和多产物发布逐条检查原生命令退出码，避免后续成功覆盖先前失败。
+平台推荐、电台和歌单同步 E2E 依赖外部音源，网络失败也会阻断门禁，不会忽略失败。
 单项脚本可在构建后分别执行 `npm run test:e2e:platform`、`npm run test:e2e:radio`、
 `npm run test:e2e:sync`、`npm run test:e2e:user-api`。
 

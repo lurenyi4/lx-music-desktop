@@ -1,5 +1,36 @@
 # Fork 审查问题修复（2026-09-22）
 
+## 三端 CI 与原生依赖（2026-10-05）
+
+`validate.yml` 作为 PR、分支构建和 release/beta 的共同验证入口，在 Windows、Linux、macOS
+分别运行 lint、typecheck、单测、生产构建和当前四条 Electron E2E。
+另在对应系统 runner 上打包 Windows/macOS x64 与 arm64、Linux x64/arm64/armv7l，显式禁止发布。
+打包后读取实际 ASAR 中的 SQLite 二进制及 Electron 可执行文件，验证二者目标架构；不以产物文件名作为架构证据。
+跨架构包生成与目标架构实机测试是不同验证范围；Windows 7 兼容产物仍不代表 Windows 7 实机通过。
+聚合门禁只接受测试矩阵和打包矩阵同时成功，失败、取消或跳过均阻断，release/beta 的发布和上传 job
+依赖同一次运行的共同门禁，因此不能绕过当前提交的三端检查。
+
+现代 Electron 的 SQLite 不再复制仓库中的无版本历史二进制，而由 postinstall 和打包前 hook
+复制当前锁定包对应目标架构的 N-API 预编译绑定至应用固定加载路径；缺少预编译时按 Electron 版本及目标架构重建，失败会直接失败。
+Windows 7 的 Electron 22 保留显式的历史兼容绑定。`npm run test:ci` 检查 workflow 依赖关系，
+并用真实 Electron 执行 SQLite 内存数据库的建表、插入和查询，以检测 ABI 错配。
+Linux ARM 打包需要 GNU 交叉编译器；Windows 源码编译需要 C++ Build Tools，macOS 需要 Xcode 命令行工具。
+外部音源网络错误仍会令 E2E 门禁失败，不能以单测或打包成功替代三端真实运行结果。
+
+本轮本机 Windows 验证已通过 65 文件/901 单测、lint、typecheck、生产构建、十一项 CI/原生准备回归和
+Electron 42.11.6（ABI 146、x64）SQLite 实际读写。尚未在 GitHub Actions 运行 Linux/macOS 与跨架构矩阵，
+因此以上配置不构成三端已测试通过的声明。
+修复固定绑定路径后，真实 Electron E2E 通过平台 8/8、电台 12/12、歌单同步 7/7、多活音源 8/8。
+Windows x64 Setup 无发布打包完成；实际 ASAR 的 SQLite 与 Electron 可执行文件均为 x64。
+将同一包故意按 arm64 检查会明确失败，确认架构门禁能拒绝宿主架构误装。
+审核发现 Windows PowerShell 连续原生命令可能由后续成功覆盖先前失败退出码。
+四条 E2E 已拆成独立 step；release/beta 的 Windows 多命令 step 在每次 npm、pip、git 命令后立即检查退出码，
+缓存目录查询失败也会直接退出。配置回归在真实 Windows PowerShell 中模拟前项失败、后项成功，验证门禁保留失败。
+后续审核发现干净 Windows runner 不能依赖本机 Miniconda 提供的 `sqlite3` CLI。
+CI 已补齐 Linux apt 安装、Windows Chocolatey 官方社区源安装与显式 PATH 设置，并在三端 E2E 前检查 CLI；
+macOS 使用系统 SQLite。新增回归验证安装/检查顺序、Linux 包清单、Windows 来源和安装失败传播。
+本机 CLI 可执行性已检查，Chocolatey 安装过程与干净 runner 行为仍待 GitHub Actions 实测。
+
 针对 `1b4e09c9` 的六项审查发现，补齐音源隔离、初始化、播放入口和推荐数据传递的边界。
 
 | 问题 | 修复后的行为 | 回归覆盖 |
