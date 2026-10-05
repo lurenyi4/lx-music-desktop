@@ -6,12 +6,26 @@ const vm = require('node:vm')
 const { acceptAgreement, makeProfileDir } = require('./harness')
 const { dismissOverlayModal } = require('./pathProbe')
 
-function fixture({ accepted = false, missing = false } = {}) {
-  const state = { lxData: { appSetting: { 'common.isAgreePact': accepted } }, acceptedClicks: 0, noticeClicks: 0 }
+function fixture({ accepted = false, missing = false, audioWarning = false } = {}) {
+  const state = { lxData: { appSetting: { 'common.isAgreePact': accepted } }, acceptedClicks: 0, noticeClicks: 0, audioWarning, audioConfirmClicks: 0 }
   const evaluate = fn => vm.runInNewContext(`(${fn.toString()})()`, { window: state, document: { querySelector: () => ({ childElementCount: 1 }) } })
   const window = {
     evaluate,
     async waitForFunction(fn) { assert.ok(evaluate(fn)) },
+    async waitForTimeout() {},
+    getByText(message) {
+      const audioMessage = require('../src/lang/en-us.json').media_device__empty_device_tip
+      return {
+        first() { return this },
+        async isVisible() { return state.audioWarning && message === audioMessage },
+        locator() { return this },
+        getByRole(role, options) {
+          assert.equal(role, 'button')
+          assert.equal(options.name, 'OK')
+          return { async click() { state.audioConfirmClicks++; state.audioWarning = false } }
+        },
+      }
+    },
     getByRole(role, options) {
       if (role === 'heading') return { async waitFor() { assert.equal(state.acceptedClicks, 1) } }
       const notice = options.name === '好的 (OK)'
@@ -21,11 +35,13 @@ function fixture({ accepted = false, missing = false } = {}) {
       }
       const locator = {
         first() { return this },
+        async isEnabled() { return true },
         async waitFor() { if (missing && !notice) throw new Error('Acceptance button missing') },
         async click(options) {
           if (notice) state.noticeClicks++
           else {
-            assert.equal(options.timeout, 90000, 'Click must wait for the enabled countdown state')
+            if (state.audioWarning) throw new Error('Audio warning intercepts pointer events')
+            assert.ok(options.timeout > 0, 'Click must wait for the real enabled state')
             state.acceptedClicks++
             state.lxData.appSetting['common.isAgreePact'] = true
           }
@@ -38,6 +54,13 @@ function fixture({ accepted = false, missing = false } = {}) {
 }
 
 describe('First-run agreement regression', () => {
+  it('acknowledges only the known audio-device warning before clicking the real agreement', async() => {
+    const { window, state } = fixture({ audioWarning: true })
+    await acceptAgreement(window)
+    assert.equal(state.audioConfirmClicks, 1)
+    assert.equal(state.acceptedClicks, 1)
+    assert.equal(state.noticeClicks, 1)
+  })
   it('accepts the English button and confirms saved agreement and delayed notice', async() => {
     const { window, state } = fixture()
     await acceptAgreement(window)

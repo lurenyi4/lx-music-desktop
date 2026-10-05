@@ -27,7 +27,7 @@ async function step(window, errors, name, fn, { soft = false } = {}) {
     record(name, true)
   } catch (err) {
     record(name, false, `${err.message}`.slice(0, 400))
-    const file = await screenshot(window, `fail_${name.replace(/[^\w一-龥]+/g, '_')}`)
+    const file = await screenshot(window, `fail_${name.replace(/[^\w一-龥]+/g, '_')}`, err)
     console.log(`      screenshot: ${file}`)
     if (errors.length) console.log(`      recent errors:\n${errors.slice(-5).join('\n')}`)
     if (!soft) throw new Error(`步骤失败中止: ${name}`)

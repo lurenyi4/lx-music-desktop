@@ -16,6 +16,7 @@ const path = require('path')
 const fs = require('fs')
 const { launchApp, collectErrors, screenshot, acceptAgreement, ART_DIR } = require('./harness')
 const { dismissOverlayModal, readPlaybar, clickPathRowAndVerify } = require('./pathProbe')
+const OFFLINE_SEARCH_SOURCE = 'kw'
 
 const results = []
 function record(name, ok, detail = '') {
@@ -29,7 +30,7 @@ async function step(window, errors, name, fn) {
     record(name, true)
   } catch (err) {
     record(name, false, `${err.message}`.slice(0, 400))
-    const file = await screenshot(window, `fail_${name.replace(/[^\w一-龥]+/g, '_')}`)
+    const file = await screenshot(window, `fail_${name.replace(/[^\w一-龥]+/g, '_')}`, err)
     console.log(`      screenshot: ${file}`)
     if (errors.length) console.log(`      recent errors:\n${errors.slice(-5).join('\n')}`)
   }
@@ -85,7 +86,7 @@ async function searchAndPlay(window, keyword, offset = 0) {
 /** 双击当前搜索结果中的第 offset 行（不切搜索词；断网场景下音乐无法加载也会派发切歌事件）。 */
 async function playSearchRow(window, offset) {
   const row = window.locator('.list-item').nth(offset)
-  if (!(await row.isVisible().catch(() => false))) return false
+  await row.waitFor({ state: 'visible', timeout: 15000 })
   await row.dblclick({ position: { x: 250, y: 10 } })
   await window.waitForTimeout(1200)
   return true
@@ -206,26 +207,35 @@ async function playSearchRow(window, offset) {
     })
 
     await step(window, errors, 'R9-断网连续失败收台与复活（AC9）', async() => {
-      // 先在有网时保证搜索结果行可用（断网后无法再搜索；页面经 keep-alive 驻留上次结果）
-      await nav(window, '#/search')
-      await window.waitForTimeout(1000)
-      if (await window.locator('.list-item').count() < 5) {
-        const input = window.getByPlaceholder('Search for something...').first()
-        await input.fill('林俊杰')
-        await input.press('Enter')
-        await window.waitForTimeout(8000)
-        await window.keyboard.press('Escape')
-        await window.waitForTimeout(500)
-        if (await window.locator('.list-item').count() < 5) throw new Error('搜索结果行不足，无法多轮切歌')
+      // Aggregate search refetches on every return and loses rows offline.
+      // A single provider reuses its cache for the identical keyword/page.
+      const offlineSearchRoute = '#/search?' + new URLSearchParams({ source: OFFLINE_SEARCH_SOURCE, type: 'music', text: '林俊杰', page: '1' })
+      await nav(window, offlineSearchRoute)
+      await window.locator('.list-item').nth(4).waitFor({ state: 'visible', timeout: 30000 })
+      const offlineFailures = []
+      const searchReloads = []
+      let endedForFailures = false
+      const observeOffline = message => {
+        const text = message.text()
+        if (text.startsWith('[session] 计划失败')) offlineFailures.push(text)
+        if (text.includes('[session] 同一 run 连续计划最终失败达到上限，收台')) endedForFailures = true
+        if (!text.startsWith('---start--- ')) return
+        try {
+          const url = new URL(text.slice('---start--- '.length))
+          if (url.hostname === 'search.kuwo.cn' && url.searchParams.get('all') === '林俊杰' && url.searchParams.get('rn') === '30') searchReloads.push(text)
+        } catch {}
       }
+      window.on('console', observeOffline)
       const cdp = await window.context().newCDPSession(window)
       await cdp.send('Network.enable')
       await cdp.send('Network.setBlockedURLs', { urls: ['http://*/*', 'https://*/*'] })
       try {
         // 连续路径外切歌：每次触发一次重锚计划，断网下候选池为空 → 计划失败；计满三次即收台
         for (let i = 0; i < 3; i++) {
-          await nav(window, '#/search')
+          if (endedForFailures) { await nav(window, '#/explore'); break }
+          await nav(window, offlineSearchRoute)
           await window.waitForTimeout(600)
+          const failuresBefore = offlineFailures.length
           const ok = await playSearchRow(window, i + 1)
           if (!ok) throw new Error(`第 ${i + 1} 次切歌行不可点`)
           await nav(window, '#/explore')
@@ -235,8 +245,8 @@ async function playSearchRow(window, offset) {
           let sessionGone = false
           while (Date.now() - start < 100000) {
             const body = await window.evaluate(() => document.body.innerText)
-            if (/这次计划没有完成/.test(body)) sawFailure = true
-            if (!/你在这里/.test(body)) sessionGone = true
+            if (/这次计划没有完成/.test(body) && offlineFailures.length > failuresBefore) sawFailure = true
+            if (!/你在这里/.test(body) && endedForFailures) sessionGone = true
             if (sawFailure || sessionGone) break
             await window.waitForTimeout(2000)
           }
@@ -247,11 +257,15 @@ async function playSearchRow(window, offset) {
         const settled = await window.evaluate(() => document.body.innerText)
         if (/你在这里/.test(settled)) throw new Error('连续三次计划失败后仍在会话中（未收台）')
         if (!/这次计划没有完成|从当前播放的歌曲出发/.test(settled)) throw new Error('收台后空态/失败文案缺失')
+        if (!endedForFailures || offlineFailures.length < 3) throw new Error(`缺少三次真实计划失败及达到上限收台证据: failures=${offlineFailures.length}, ended=${endedForFailures}`)
+        if (searchReloads.length) throw new Error(`断网期间缓存搜索被重新请求: ${searchReloads.join('\n')}`)
+        console.log(`      [offline proof] failures=${offlineFailures.length} ended=${endedForFailures} cachedSearchReloads=${searchReloads.length}`)
       } finally {
+        window.off('console', observeOffline)
         await cdp.send('Network.setBlockedURLs', { urls: [] })
       }
       // 收台后电台仍为开：恢复网络 + 切歌应自动重开新台
-      await nav(window, '#/search')
+      await nav(window, offlineSearchRoute)
       await window.waitForTimeout(600)
       const ok = await playSearchRow(window, 4)
       if (!ok) throw new Error('复活切歌行不可点')

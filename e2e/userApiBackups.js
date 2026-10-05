@@ -34,7 +34,7 @@ async function run(window, name, fn) {
     record(name, true, detail ?? '')
   } catch (err) {
     record(name, false, `${err.message}`)
-    const file = await screenshot(window, `fail_${name.replace(/[^\w\u4e00-\u9fff]+/g, '_')}`)
+    const file = await screenshot(window, `fail_${name.replace(/[^\w\u4e00-\u9fff]+/g, '_')}`, err)
     console.log(`      screenshot: ${file}`)
   }
 }

@@ -114,14 +114,42 @@ async function launchApp(opts = {}) {
   }
 }
 
+/** Acknowledge only the exact production no-audio-device warning. */
+async function acknowledgeAudioWarning(window) {
+  for (const locale of ['zh-cn', 'zh-tw', 'en-us', 'ko-kr']) {
+    const messages = require(`../src/lang/${locale}.json`)
+    const warning = window.getByText(messages.media_device__empty_device_tip, { exact: true }).first()
+    if (!await warning.isVisible()) continue
+    await warning.locator('..').getByRole('button', { name: messages.ok, exact: true }).click({ timeout: 1000 })
+    console.log(`[startup] acknowledged audio-device warning (${locale})`)
+  }
+}
+
 /** Complete the real first-run agreement; absence is only valid after acceptance. */
 async function acceptAgreement(window) {
   await window.waitForFunction(() => window.lxData?.appSetting != null && document.querySelector('#root')?.childElementCount > 0, null, { timeout: 30000 })
   if (await window.evaluate(() => window.lxData.appSetting['common.isAgreePact'] === true)) return
   const button = window.getByRole('button', { name: /^(接受|Accept|동의)(?:\s|$)/ }).first()
   await button.waitFor({ state: 'visible', timeout: 30000 })
-  // Playwright waits for the actual enabled state, including slow timer ticks.
-  await button.click({ timeout: 90000 })
+  // A headless runner may show the known no-audio-device alert over the pact.
+  // Keep waiting for real enablement/actionability; never force-click the pact
+  // or dismiss unknown dialogs. The total deadline stays bounded at 90 seconds.
+  const deadline = Date.now() + 90000
+  let clicked = false
+  while (Date.now() < deadline) {
+    try {
+      await acknowledgeAudioWarning(window)
+      if (await button.isEnabled()) {
+        await button.click({ timeout: 1000 })
+        clicked = true
+        break
+      }
+    } catch (error) {
+      if (error.name !== 'TimeoutError') throw error
+    }
+    await window.waitForTimeout(250)
+  }
+  if (!clicked) throw new Error('Agreement accept button remained blocked or disabled for 90 seconds')
   await window.waitForFunction(() => window.lxData.appSetting['common.isAgreePact'] === true, null, { timeout: 15000 })
   await window.getByRole('heading', { name: '许可协议', exact: true }).waitFor({ state: 'hidden', timeout: 15000 })
   const notice = window.getByRole('button', { name: '好的 (OK)', exact: true }).first()
@@ -142,8 +170,22 @@ function collectErrors(window) {
   return errors
 }
 
-async function screenshot(window, name) {
+async function screenshot(window, name, error) {
   const file = path.join(ART_DIR, `${name}.png`)
+  if (error) fs.writeFileSync(`${file}.error.txt`, `${error.stack ?? error.message ?? error}\n`, 'utf8')
+  await window.evaluate(() => ({
+    text: document.body.innerText,
+    html: document.body.outerHTML,
+    buttons: Array.from(document.querySelectorAll('button')).map(button => ({ text: button.textContent, disabled: button.disabled, rect: button.getBoundingClientRect().toJSON() })),
+    overlays: Array.from(document.querySelectorAll('div')).flatMap(element => {
+      // eslint-disable-next-line no-undef -- Serialized callback executes in the renderer DOM.
+      const style = getComputedStyle(element)
+      if (!style.backdropFilter || style.backdropFilter === 'none') return []
+      return [{ text: element.innerText, display: style.display, visibility: style.visibility, zIndex: style.zIndex, pointerEvents: style.pointerEvents, rect: element.getBoundingClientRect().toJSON() }]
+    }),
+  })).then(state => fs.writeFileSync(`${file}.dom.json`, JSON.stringify(state, null, 2), 'utf8')).catch(error => {
+    fs.writeFileSync(`${file}.dom-error.txt`, `${error.stack ?? error.message}\n`, 'utf8')
+  })
   await window.screenshot({ path: file }).catch(error => {
     fs.writeFileSync(`${file}.txt`, `Screenshot failed: ${error.stack ?? error.message}\n`, 'utf8')
   })

@@ -27,7 +27,14 @@ jobs:
           cache: npm
       - name: Linux desktop dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0 libnss3 libasound2t64 sqlite3
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0 libnss3 libasound2t64 libasound2-plugins pulseaudio fonts-noto-cjk sqlite3
+      - name: Prepare Linux virtual audio output
+        if: runner.os == 'Linux'
+        run: |
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=ci sink_properties=device.description=CI_Audio
+          pactl set-default-sink ci
+          pactl list short sinks
       - name: Install SQLite CLI (Windows)
         if: runner.os == 'Windows'
         shell: pwsh

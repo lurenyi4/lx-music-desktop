@@ -7,6 +7,7 @@ const yaml = require('js-yaml')
 const { spawnSync } = require('node:child_process')
 const read = name => yaml.load(fs.readFileSync(path.join(__dirname, '../.github/workflows', name), 'utf8'))
 require('./agreement.check.cjs')
+require('./radio.check.cjs')
 
 describe('CI release gate', () => {
   it('keeps host compiler defaults and only exports Linux cross compilers', () => {
@@ -41,6 +42,12 @@ describe('CI release gate', () => {
     assert.match(steps[windows].run, /GITHUB_PATH/)
     assert.match(steps[windows].run, /--source=https:\/\/community\.chocolatey\.org\/api\/v2\//)
     assert.match(linux.run, /\bsqlite3\b/)
+    assert.match(linux.run, /\bfonts-noto-cjk\b/)
+    assert.match(linux.run, /\bpulseaudio\b/)
+    const audio = steps.find(step => step.name === 'Prepare Linux virtual audio output')
+    assert.equal(audio.if, "runner.os == 'Linux'")
+    assert.match(audio.run, /pactl load-module module-null-sink/)
+    assert.match(audio.run, /pactl set-default-sink ci/)
     assert.equal(steps[verify].if, undefined, 'macOS must also verify its system SQLite CLI')
     if (process.platform === 'win32') {
       const mocked = steps[windows].run.replace(/^choco install[^\n]+/m, `& '${process.execPath.replace(/'/g, "''")}' -e 'process.exit(1)'`)
