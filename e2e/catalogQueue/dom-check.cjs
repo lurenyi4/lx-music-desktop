@@ -83,3 +83,22 @@ test('catalog close/reopen removes and reinstalls exactly one capture listener',
     }
   } finally { await f.close() }
 })
+for (const file of ['common.js', 'userApiBackups.js']) {
+  test(`${file} E2E menu helper selects one visible real menu action and rejects a hidden menu`, async() => {
+    const f = await fixture()
+    try {
+      const source = fs.readFileSync(path.join(root, 'e2e', file), 'utf8')
+      const helperSource = source.match(/async function clickOpenMenuItem\(window, label\) \{[\s\S]*?\n\}/)?.[0]
+      assert.ok(helperSource, 'Exercise the actual E2E helper rather than a copied selector')
+      const helper = f.window.eval(`(${helperSource})`)
+      const browserPage = { evaluate: async(fn, arg) => fn(arg), waitForTimeout: async() => f.flush() }
+      await f.open()
+      const label = f.document.querySelector('[role=menuitem]').getAttribute('aria-label')
+      await helper(browserPage, label)
+      assert.equal(f.window.fixture.listEvents.plays.length, 1)
+      assert.equal(f.document.querySelector('[role=menu]').getAttribute('aria-hidden'), 'true')
+      await assert.rejects(helper(browserPage, label), /菜单未打开或菜单项不存在/)
+      assert.equal(f.window.fixture.listEvents.plays.length, 1)
+    } finally { await f.close() }
+  })
+}

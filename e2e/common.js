@@ -106,10 +106,10 @@ const getPlayStatus = (window) => window.evaluate(() => {
   return els.map(d => d.textContent?.trim() ?? '').find(t => t && t.length < 60 && /失败|断开|停止|加载/.test(t)) ?? ''
 })
 
-/** 点击已打开的上下文菜单项（base-menu：ul[role=toolbar][aria-hidden=false] li[role=tab]）。 */
+/** 点击已打开的上下文菜单项（base-menu：ul[role=menu][aria-hidden=false] li[role=menuitem]）。 */
 async function clickOpenMenuItem(window, label) {
   const ok = await window.evaluate(l => {
-    const item = Array.from(document.querySelectorAll('ul[role="toolbar"][aria-hidden="false"] li[role="tab"]'))
+    const item = Array.from(document.querySelectorAll('ul[role="menu"][aria-hidden="false"] li[role="menuitem"]'))
       .find(li => li.getAttribute('aria-label') === l)
     if (!item) return false
     item.click()

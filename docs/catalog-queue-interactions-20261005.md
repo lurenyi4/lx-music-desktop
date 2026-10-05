@@ -49,7 +49,7 @@ Final automated checks on 2026-10-05:
 - Actual inline Vue template TypeScript check: passed
 - Original ESLint rules against all changed/new production and unit-test files: passed; no rules weakened
 - Actual component harness webpack compilation: passed
-- Actual Modal/OnlineList/Menu event chain in jsdom: five DOM propagation/selection/lifecycle cases passed (included by the full Vitest driver; not browser layout/native gesture evidence)
+- Actual Modal/OnlineList/Menu event chain in jsdom: seven DOM propagation/selection/lifecycle cases passed (included by the full Vitest driver; not browser layout/native gesture evidence)
 - `git diff --check`: passed
 - Production Electron packaging/audio playback and actual UI execution: not verified, as detailed below
 
@@ -140,5 +140,9 @@ Evidence: `review8-original-red.log` shows the two actual consumer failures with
 The user additionally reported QQ `musicSearch` uncaught runtime errors. The reproducible SDK → store → view rejection chain, request races, visible retry behavior and live-provider uncertainty are documented in [Search failure recovery](search-error-recovery-20261005.md). This stage also handles the separate playlist-search view and QQ playlist endpoint; local saved-list filtering does not use that endpoint. Cycle-eight's frozen patch remains available separately; this combined candidate requires fresh focused and full independent reviews.
 
 Final ninth-stage checks are the `*-review9.log` files. They include 78 files / 1061 tests, original lint rules, renderer/main types, existing inline catalog/queue templates, and both new search view inline templates via `e2e/search-template.check.cjs`. The full suite recompiles the real component harness and runs five DOM contracts. Native UI/audio and live-provider limits remain unchanged.
+
+## CI selector follow-up
+
+The first enabled 11-job run reached User API E2E but its legacy helper still queried `toolbar/tab`, while the production context menu now exposes `menu/menuitem`. The Linux diagnostic screenshot shows the menu open with its Add to item; the helper could not select it. Both E2E helpers now use the production roles while retaining visible-menu and exact-label requirements. Two tests execute the actual helper functions against the compiled Menu/OnlineList fixture: both failed before the selector fix, then passed with hidden-menu rejection and exactly-once action checks. The DOM suite now contains seven cases. No playback, provider, release or CI success threshold was changed; a fresh remote run is still needed to establish the full E2E outcome.
 
 No ADR was changed. Publication requires independent review; this document is not self-approval.

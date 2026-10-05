@@ -147,7 +147,7 @@ const getPlayStatus = (window) => window.evaluate(() => {
 
 async function clickOpenMenuItem(window, label) {
   const ok = await window.evaluate(l => {
-    const item = Array.from(document.querySelectorAll('ul[role="toolbar"][aria-hidden="false"] li[role="tab"]'))
+    const item = Array.from(document.querySelectorAll('ul[role="menu"][aria-hidden="false"] li[role="menuitem"]'))
       .find(li => li.getAttribute('aria-label') === l)
     if (!item) return false
     item.click()
