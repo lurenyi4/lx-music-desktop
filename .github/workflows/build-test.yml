@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [dev, master, beta]
   push:
-    branches: [dev, 'feature/**', 'feat/playback-version-queue-catalog', 'fix/**', 'codex/**']
+    branches: [dev, 'feature/**', 'feat/playback-version-queue-catalog', 'feat/catalog-queue-interactions-20261005', 'fix/**', 'codex/**']
   workflow_dispatch:
 
 permissions:
