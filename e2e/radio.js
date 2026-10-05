@@ -14,7 +14,7 @@
  */
 const path = require('path')
 const fs = require('fs')
-const { launchApp, collectErrors, screenshot, ART_DIR } = require('./harness')
+const { launchApp, collectErrors, screenshot, acceptAgreement, ART_DIR } = require('./harness')
 const { dismissOverlayModal, readPlaybar, clickPathRowAndVerify } = require('./pathProbe')
 
 const results = []
@@ -35,24 +35,6 @@ async function step(window, errors, name, fn) {
   }
 }
 
-/** 等待协议弹窗倒计时结束并点击"接受"，随后关闭开源声明弹窗；弹窗不存在则跳过。 */
-async function acceptAgreement(window) {
-  const btn = window.locator('button').filter({ hasText: /^接受/ }).first()
-  const found = await btn.waitFor({ timeout: 15000 }).then(() => true).catch(() => false)
-  if (!found) return
-  for (let i = 0; i < 25; i++) {
-    const text = await btn.textContent()
-    if (!/\d/.test(text)) break
-    await window.waitForTimeout(1000)
-  }
-  await btn.click()
-  await window.waitForTimeout(2000)
-  const okBtn = window.locator('button').filter({ hasText: '好的 (OK)' }).first()
-  if (await okBtn.isVisible().catch(() => false)) {
-    await okBtn.click()
-    await window.waitForTimeout(1000)
-  }
-}
 
 /** 直接改 hash 导航（页面被弹窗遮罩时也能切换路由）。 */
 async function nav(window, hash) {

@@ -112,6 +112,9 @@ async function dismissOverlayModal(window) {
         // eslint-disable-next-line no-undef -- 回调体在浏览器上下文执行（window.evaluate 序列化注入），getComputedStyle 由页面提供
         const cs = getComputedStyle(el)
         if (cs.backdropFilter && cs.backdropFilter !== 'none') {
+          if (el.querySelector('h2')?.textContent?.trim() === '许可协议') {
+            return { protected: true, text: '许可协议', onClicked: false }
+          }
           const btn = el.querySelector('button')
           if (btn) btn.click()
           return { text: (el.textContent ?? '').slice(0, 200), onClicked: Boolean(btn) }
@@ -120,6 +123,7 @@ async function dismissOverlayModal(window) {
       return null
     })
     if (!info) return true
+    if (info.protected) throw new Error('许可协议尚未完成：禁止将协议弹窗作为普通遮罩关闭')
     console.log(`      [dismiss] 关闭遮挡弹窗: ${JSON.stringify((info.text ?? '').split('\n')[0])} closeBtn=${info.onClicked}`)
     if (!info.onClicked) await window.keyboard.press('Escape').catch(() => {})
     await window.waitForTimeout(600)

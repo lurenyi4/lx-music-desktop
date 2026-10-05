@@ -6,8 +6,30 @@ const path = require('node:path')
 const yaml = require('js-yaml')
 const { spawnSync } = require('node:child_process')
 const read = name => yaml.load(fs.readFileSync(path.join(__dirname, '../.github/workflows', name), 'utf8'))
+require('./agreement.check.cjs')
 
 describe('CI release gate', () => {
+  it('keeps host compiler defaults and only exports Linux cross compilers', () => {
+    const job = read('validate.yml').jobs.package
+    const packageIndex = job.steps.findIndex(step => step.run?.includes('build-config/build-pack.js'))
+    const packageStep = job.steps[packageIndex]
+    assert.equal(packageStep.env?.CC, undefined, 'An absent matrix compiler must not override CC with an empty value')
+    assert.equal(packageStep.env?.CXX, undefined, 'An absent matrix compiler must not override CXX with an empty value')
+    const crossIndex = job.steps.findIndex(step => step.name === 'Select Linux cross compilers')
+    assert.ok(crossIndex >= 0 && crossIndex < packageIndex)
+    assert.ok(crossIndex > job.steps.findIndex(step => step.run === 'npm ci'))
+    assert.ok(crossIndex > job.steps.findIndex(step => step.run === 'npm run build'))
+    const cross = job.steps[crossIndex]
+    assert.equal(cross.if, "matrix.target == 'linux' && matrix.arch != 'x64'")
+    assert.equal(cross.env.TARGET_CC, '${{ matrix.cc }}')
+    assert.equal(cross.env.TARGET_CXX, '${{ matrix.cxx }}')
+    assert.match(cross.run, /echo "CC=\$TARGET_CC" >> "\$GITHUB_ENV"/)
+    assert.match(cross.run, /echo "CXX=\$TARGET_CXX" >> "\$GITHUB_ENV"/)
+    assert.match(cross.run, /test -n "\$TARGET_CC" && test -n "\$TARGET_CXX"/)
+    for (const item of job.strategy.matrix.include.filter(item => item.target === 'linux' && item.arch !== 'x64')) {
+      assert.ok(item.cc && item.cxx, 'Every selected Linux cross architecture must specify both compilers')
+    }
+  })
   it('prepares and verifies the SQLite CLI before Electron E2E on every OS', () => {
     const steps = read('validate.yml').jobs.test.steps
     const windows = steps.findIndex(step => step.if === "runner.os == 'Windows'" && /choco install sqlite/.test(step.run ?? ''))
@@ -53,6 +75,12 @@ describe('CI release gate', () => {
     assert.deepEqual(workflow.jobs.test.strategy.matrix.os.sort(), ['macos-latest', 'ubuntu-latest', 'windows-latest'])
     const commands = workflow.jobs.test.steps.map(step => step.run ?? '').join('\n')
     for (const command of ['npm run test:ci', 'npm run lint', 'npm run typecheck', 'npm test', 'npm run build', 'npm run test:e2e:platform', 'npm run test:e2e:radio', 'npm run test:e2e:sync', 'npm run test:e2e:user-api']) assert.ok(commands.includes(command), command)
+    const diagnostics = workflow.jobs.test.steps.find(step => step.name === 'Upload Electron failure diagnostics')
+    assert.equal(diagnostics.if, 'failure()')
+    assert.equal(diagnostics.with.path, '${{ runner.temp }}/lx-e2e-artifacts')
+    const languageChecks = workflow.jobs.test.steps.filter(step => /node e2e\/profileLanguage\.js/.test(step.run ?? ''))
+    assert.deepEqual(languageChecks.map(step => step.if).sort(), ["runner.os != 'Linux'", "runner.os == 'Linux'"].sort())
+    assert.ok(workflow.jobs.test.steps.indexOf(languageChecks[0]) > workflow.jobs.test.steps.findIndex(step => step.run === 'npm run build'))
     assert.deepEqual(workflow.jobs.gate.needs, ['test', 'package'])
     assert.equal(workflow.jobs.gate.if, '${{ always() }}')
     assert.equal(workflow.jobs.gate.steps[0].run, 'test "$TEST_RESULT" = success && test "$PACKAGE_RESULT" = success')

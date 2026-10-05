@@ -12,7 +12,7 @@
  * 依赖外网（应用音源搜索 + wy/tx 相似端点），偶发失败属网络波动。
  */
 const fs = require('fs')
-const { launchApp, collectErrors, screenshot, ART_DIR } = require('./harness')
+const { launchApp, collectErrors, screenshot, acceptAgreement, ART_DIR } = require('./harness')
 const { dismissOverlayModal, readPlaybar } = require('./pathProbe')
 
 const results = []
@@ -34,23 +34,6 @@ async function step(window, errors, name, fn, { soft = false } = {}) {
   }
 }
 
-async function acceptAgreement(window) {
-  const btn = window.locator('button').filter({ hasText: /^接受/ }).first()
-  const found = await btn.waitFor({ timeout: 15000 }).then(() => true).catch(() => false)
-  if (!found) return
-  for (let i = 0; i < 25; i++) {
-    const text = await btn.textContent()
-    if (!/\d/.test(text)) break
-    await window.waitForTimeout(1000)
-  }
-  await btn.click()
-  await window.waitForTimeout(2000)
-  const okBtn = window.locator('button').filter({ hasText: '好的 (OK)' }).first()
-  if (await okBtn.isVisible().catch(() => false)) {
-    await okBtn.click()
-    await window.waitForTimeout(1000)
-  }
-}
 
 async function nav(window, hash) {
   await window.evaluate(h => { window.location.hash = h }, hash)

@@ -16,12 +16,11 @@
  *   U6 macOS 关闭主窗口后重新激活，主源和备源均重新加载且可取流
  * 用法: node e2e/userApiBackups.js
  */
-const { launchApp, collectErrors, screenshot, ART_DIR } = require('./harness')
+const { launchApp, collectErrors, screenshot, acceptAgreement, makeProfileDir, ART_DIR } = require('./harness')
 const { execFileSync } = require('child_process')
 const http = require('http')
 const fs = require('fs')
 const path = require('path')
-const os = require('os')
 const zlib = require('zlib')
 
 const results = []
@@ -108,19 +107,11 @@ async function startAudioServer() {
 
 /** 预置 profile：设置 + 两个假源 */
 function makeProfile(audioUrl) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lx-e2e-backup-'))
+  const dir = makeProfileDir({
+    'common.apiSource': PRIMARY_ID,
+    'common.apiSourceBackups': [BACKUP_ID],
+  }, require('../package.json').version)
   const lxDataDir = path.join(dir, 'LxDatas')
-  fs.mkdirSync(lxDataDir, { recursive: true })
-  // setting.version 必须写在 setting 对象内部（≥2.1.0 跳过旧格式迁移，否则 apiSource 被抹掉）
-  fs.writeFileSync(path.join(lxDataDir, 'config_v2.json'), JSON.stringify({
-    version: require('../package.json').version,
-    setting: {
-      version: '2.1.0',
-      'common.showChangeLog': false,
-      'common.apiSource': PRIMARY_ID,
-      'common.apiSourceBackups': [BACKUP_ID],
-    },
-  }), 'utf8')
   const mk = (id, name, mode) => ({
     id,
     name,
@@ -136,23 +127,6 @@ function makeProfile(audioUrl) {
   return dir
 }
 
-async function agree(window) {
-  const btn = window.locator('button').filter({ hasText: /^接受/ }).first()
-  const found = await btn.waitFor({ timeout: 6000 }).then(() => true).catch(() => false)
-  if (!found) return
-  for (let i = 0; i < 25; i++) {
-    const text = await btn.textContent()
-    if (!/\d/.test(text)) break
-    await window.waitForTimeout(1000)
-  }
-  await btn.click()
-  await window.waitForTimeout(2000)
-  const okBtn = window.locator('button').filter({ hasText: '好的 (OK)' }).first()
-  if (await okBtn.isVisible().catch(() => false)) {
-    await okBtn.click()
-    await window.waitForTimeout(1000)
-  }
-}
 
 const nav = async(window, hash) => {
   await window.evaluate(h => { window.location.hash = h }, hash)
@@ -207,7 +181,7 @@ const isTolerable = (e) => TOLERATED_ERRORS.some(re => re.test(e))
   const consoleMsgs = []
   window.on('console', msg => consoleMsgs.push(`[${msg.type()}] ${msg.text()}`))
   await window.waitForTimeout(3000)
-  await agree(window)
+  await acceptAgreement(window)
   await window.waitForTimeout(1000)
 
   // ================= U1 双源同时装载 =================
@@ -335,6 +309,7 @@ const isTolerable = (e) => TOLERATED_ERRORS.some(re => re.test(e))
       window.__e2eMusicToggles = 0
       window.app_event.on('musicToggled', () => { window.__e2eMusicToggles++ })
       window.__e2ePlayStatuses = []
+      // eslint-disable-next-line no-undef -- This callback runs in the renderer DOM.
       window.__e2eStatusObserver = new MutationObserver(() => {
         const labels = Array.from(document.querySelectorAll('#player div, #player span'))
           .map(el => el.textContent?.trim() ?? '')

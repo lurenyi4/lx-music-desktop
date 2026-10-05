@@ -17,9 +17,9 @@ Windows 7 的 Electron 22 保留显式的历史兼容绑定。`npm run test:ci` 
 Linux ARM 打包需要 GNU 交叉编译器；Windows 源码编译需要 C++ Build Tools，macOS 需要 Xcode 命令行工具。
 外部音源网络错误仍会令 E2E 门禁失败，不能以单测或打包成功替代三端真实运行结果。
 
-本轮本机 Windows 验证已通过 65 文件/901 单测、lint、typecheck、生产构建、十一项 CI/原生准备回归和
-Electron 42.11.6（ABI 146、x64）SQLite 实际读写。尚未在 GitHub Actions 运行 Linux/macOS 与跨架构矩阵，
-因此以上配置不构成三端已测试通过的声明。
+本轮本机 Windows 验证已通过 65 文件/901 单测、lint、typecheck、生产构建、十七项 CI/原生准备回归和
+Electron 42.11.6（ABI 146、x64）SQLite 实际读写。这些 Windows 本机证据不能代表 Linux/macOS 或其他架构已通过，
+三端最终状态以 GitHub Actions 实跑结果为准。
 修复固定绑定路径后，真实 Electron E2E 通过平台 8/8、电台 12/12、歌单同步 7/7、多活音源 8/8。
 Windows x64 Setup 无发布打包完成；实际 ASAR 的 SQLite 与 Electron 可执行文件均为 x64。
 将同一包故意按 arm64 检查会明确失败，确认架构门禁能拒绝宿主架构误装。
@@ -29,7 +29,23 @@ Windows x64 Setup 无发布打包完成；实际 ASAR 的 SQLite 与 Electron �
 后续审核发现干净 Windows runner 不能依赖本机 Miniconda 提供的 `sqlite3` CLI。
 CI 已补齐 Linux apt 安装、Windows Chocolatey 官方社区源安装与显式 PATH 设置，并在三端 E2E 前检查 CLI；
 macOS 使用系统 SQLite。新增回归验证安装/检查顺序、Linux 包清单、Windows 来源和安装失败传播。
-本机 CLI 可执行性已检查，Chocolatey 安装过程与干净 runner 行为仍待 GitHub Actions 实测。
+本机 CLI 可执行性已检查，干净 runner 的最终验证结果以 GitHub Actions 实跑记录为准。
+首次实际 CI 的 Linux x64 打包暴露了空 `CC`/`CXX` 覆盖默认编译器，导致 bufferutil 重建失败。
+已移除打包 step 的无条件编译器环境覆盖，仅 Linux ARM 在宿主依赖安装和构建后、打包前导出非空目标编译器；
+这同时覆盖 electron-builder 在 hook 前的原生依赖重建。新增配置回归先复现失败再通过，修复后的 CI 结果仍待重跑确认。
+首次 CI 三端 E2E 均在“启动与协议”假通过后关闭许可并退出：协议按钮按系统语言显示为 `Accept`，
+旧助手只查中文“接受”，找不到直接返回；通用遮罩助手再点击协议中的第一个“不接受/Decline”按钮，触发生产退出行为。
+原助手英文场景已复现未同意却返回成功。现四条套件共用真实接受流程，等待按钮启用、同意状态、弹窗隐藏及延迟声明确认；
+测试 profile 显式固定中文且不预先同意，通用遮罩助手禁止关闭许可协议。
+新增五项协议回归；真实 Electron 英文 profile 中接受按钮初始禁用，实际等待约 23.7 秒后同意成功，
+复用同一 profile 重启后也确认已持久同意并正确跳过。协议修复后的三端 CI 仍待重跑。
+为后续失败增加逐 profile 的主进程/渲染日志、进程输出、关闭/崩溃事件与截图错误文本，CI 失败时上传诊断 artifact。
+独立审核随后发现外层应用 `version` 不能替代 `setting.version`：缺少内部版本会进入生产旧配置迁移，
+把 `common.langId` 覆盖为旧 `langId`，因此仅查落盘中文值的测试漏掉了语言失效。
+已按 `src/common/defaultSetting.ts` 的真实配置版本 `2.1.0` 填写内部版本，多活音源改为复用同一 profile 工厂并保留外层应用 metadata。
+新增真实 Electron `--lang=en-US` 生产迁移/初始化检查，修复前默认 profile 实际为 `en-us`，断言失败；
+修复后默认 profile 和带当前应用 metadata 的 profile 均为 `zh-cn`，显式英文为 `en-us`，三者仍未同意协议。
+此检查在三端 CI 构建后、功能 E2E 前运行，避免再次只验证 fixture 文件而漏掉实际生效状态。
 
 针对 `1b4e09c9` 的六项审查发现，补齐音源隔离、初始化、播放入口和推荐数据传递的边界。
 

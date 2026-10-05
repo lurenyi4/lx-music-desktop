@@ -1,6 +1,6 @@
 /**
  * e2e 启动器：用 playwright-core 的 _electron 驱动 dist 生产构建。
- * 每次启动使用临时 HOME，隔离用户数据（不触碰真实 LxDatas）。
+ * 每次启动使用隔离的 user-data-dir（不触碰真实 LxDatas）。
  */
 const { _electron } = require('playwright-core')
 const path = require('path')
@@ -8,9 +8,9 @@ const fs = require('fs')
 const os = require('os')
 
 const APP_ROOT = path.resolve(__dirname, '..')
-const ART_DIR = path.resolve(os.tmpdir(), 'lx-e2e-artifacts')
+const ART_DIR = path.resolve(process.env.RUNNER_TEMP ?? os.tmpdir(), 'lx-e2e-artifacts')
 
-function makeProfileDir(extraSettings) {
+function makeProfileDir(extraSettings, appVersion = null) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lx-e2e-profile-'))
   // 预置设置：关闭「显示更新日志」弹窗（首启时版本信息网络返回后延迟弹出，
   // 时机不定，会拦截后续点击导致 e2e 随机级联超时；其余设置走默认值）
@@ -18,7 +18,9 @@ function makeProfileDir(extraSettings) {
   fs.mkdirSync(lxDataDir, { recursive: true })
   fs.writeFileSync(
     path.join(lxDataDir, 'config_v2.json'),
-    JSON.stringify({ version: null, setting: { 'common.showChangeLog': false, ...(extraSettings ?? {}) } }),
+    // Configuration schema version from src/common/defaultSetting.ts; the outer
+    // version is app metadata and does not protect settings from legacy migration.
+    JSON.stringify({ version: appVersion, setting: { version: '2.1.0', 'common.showChangeLog': false, 'common.langId': 'zh-cn', ...(extraSettings ?? {}) } }),
     'utf8',
   )
   return dir
@@ -34,7 +36,7 @@ async function waitMainWindow(app, timeoutMs = 90000) {
       try { url = w.url() ?? '' } catch {}
       if (url.startsWith('file://') && url.includes('index.html')) return w
     }
-    await new Promise(r => setTimeout(r, 500))
+    await new Promise(resolve => setTimeout(resolve, 500))
   }
   try {
     return await app.firstWindow()
@@ -78,6 +80,9 @@ async function launchApp(opts = {}) {
   // macOS 上 Electron 的 userData 不跟随 $HOME，必须用 --user-data-dir 才能隔离
   const profileDir = opts.profileDir ?? makeProfileDir(opts.extraSettings)
   const electronPath = require('electron')
+  const logPath = path.join(ART_DIR, `${path.basename(process.argv[1] ?? 'electron')}-${path.basename(profileDir)}.log`)
+  const log = message => fs.appendFileSync(logPath, `${new Date().toISOString()} ${message}\n`, 'utf8')
+  log(`profile=${profileDir}`)
   const app = await _electron.launch({
     executablePath: electronPath,
     args: [APP_ROOT, `--user-data-dir=${profileDir}`, ...(opts.args ?? [])],
@@ -86,10 +91,43 @@ async function launchApp(opts = {}) {
       ...opts.extraEnv,
     },
     timeout: 180000,
-  })
-  const window = await waitMainWindow(app)
-  await window.waitForLoadState('domcontentloaded')
-  return { app, window, profileDir }
+  }).catch(error => { log(`[launch failed] ${error.stack ?? error.message}`); throw error })
+  for (const stream of ['stdout', 'stderr']) app.process()[stream]?.on('data', data => log(`[${stream}] ${data.toString()}`))
+  app.on('console', message => log(`[main ${message.type()}] ${message.text()}`))
+  app.on('close', () => log('[app closed]'))
+  const capture = page => {
+    page.on('console', message => log(`[renderer ${message.type()}] ${message.text()}`))
+    page.on('pageerror', error => log(`[pageerror] ${error.stack ?? error.message}`))
+    page.on('crash', () => log('[renderer crashed]'))
+    page.on('close', () => log('[window closed]'))
+  }
+  app.on('window', capture)
+  for (const page of app.windows()) capture(page)
+  try {
+    const window = await waitMainWindow(app)
+    await window.waitForLoadState('domcontentloaded')
+    return { app, window, profileDir }
+  } catch (error) {
+    log(`[startup failed] ${error.stack ?? error.message}`)
+    await app.close().catch(() => {})
+    throw error
+  }
+}
+
+/** Complete the real first-run agreement; absence is only valid after acceptance. */
+async function acceptAgreement(window) {
+  await window.waitForFunction(() => window.lxData?.appSetting != null && document.querySelector('#root')?.childElementCount > 0, null, { timeout: 30000 })
+  if (await window.evaluate(() => window.lxData.appSetting['common.isAgreePact'] === true)) return
+  const button = window.getByRole('button', { name: /^(接受|Accept|동의)(?:\s|$)/ }).first()
+  await button.waitFor({ state: 'visible', timeout: 30000 })
+  // Playwright waits for the actual enabled state, including slow timer ticks.
+  await button.click({ timeout: 90000 })
+  await window.waitForFunction(() => window.lxData.appSetting['common.isAgreePact'] === true, null, { timeout: 15000 })
+  await window.getByRole('heading', { name: '许可协议', exact: true }).waitFor({ state: 'hidden', timeout: 15000 })
+  const notice = window.getByRole('button', { name: '好的 (OK)', exact: true }).first()
+  await notice.waitFor({ state: 'visible', timeout: 15000 })
+  await notice.click()
+  await notice.waitFor({ state: 'hidden', timeout: 15000 })
 }
 
 /** 页面错误采集器：收集 console error / pageerror。 */
@@ -106,8 +144,10 @@ function collectErrors(window) {
 
 async function screenshot(window, name) {
   const file = path.join(ART_DIR, `${name}.png`)
-  await window.screenshot({ path: file }).catch(() => {})
+  await window.screenshot({ path: file }).catch(error => {
+    fs.writeFileSync(`${file}.txt`, `Screenshot failed: ${error.stack ?? error.message}\n`, 'utf8')
+  })
   return file
 }
 
-module.exports = { launchApp, collectErrors, screenshot, ART_DIR }
+module.exports = { launchApp, collectErrors, screenshot, acceptAgreement, makeProfileDir, ART_DIR }

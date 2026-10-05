@@ -2,7 +2,7 @@
  * T-A2/T-A3 e2e：从官方源导入一个真实歌单（收藏）→ 校验元数据持久化（cover/desc/author）→ 重启应用 → 启动自动同步记录（updateTime/updateError）。
  * 用法: node e2e/sync.js
  */
-const { launchApp, collectErrors, screenshot, ART_DIR } = require('./harness')
+const { launchApp, collectErrors, acceptAgreement, ART_DIR } = require('./harness')
 const { execFileSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
@@ -12,23 +12,6 @@ function sqlite(profileDir, sql) {
   return execFileSync('sqlite3', [db, sql], { encoding: 'utf8' }).trim()
 }
 
-async function agree(window) {
-  const btn = window.locator('button').filter({ hasText: /^接受/ }).first()
-  const found = await btn.waitFor({ timeout: 6000 }).then(() => true).catch(() => false)
-  if (!found) return // 已同意过（二次启动）
-  for (let i = 0; i < 25; i++) {
-    const text = await btn.textContent()
-    if (!/\d/.test(text)) break
-    await window.waitForTimeout(1000)
-  }
-  await btn.click()
-  await window.waitForTimeout(2000)
-  const okBtn = window.locator('button').filter({ hasText: '好的 (OK)' }).first()
-  if (await okBtn.isVisible().catch(() => false)) {
-    await okBtn.click()
-    await window.waitForTimeout(1000)
-  }
-}
 
 async function nav(window, hash) {
   await window.evaluate(h => { window.location.hash = h }, hash)
@@ -89,7 +72,7 @@ async function importFirstWorkableList(window) {
     profileDir = launched.profileDir
     const errors = collectErrors(window)
     await window.waitForTimeout(2500)
-    await agree(window)
+    await acceptAgreement(window)
     await window.waitForTimeout(2000)
 
     try {
@@ -124,7 +107,7 @@ async function importFirstWorkableList(window) {
     const { app, window } = await launchApp({ profileDir })
     const errors = collectErrors(window)
     await window.waitForTimeout(3000)
-    await agree(window)
+    await acceptAgreement(window)
     // 给启动同步留时间（顺序同步一个歌单 + 写入记录）
     await window.waitForTimeout(25000)
 

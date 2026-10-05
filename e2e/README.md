@@ -13,6 +13,7 @@ Windows 需要 Visual Studio C++ Build Tools；Linux 需要本地 C/C++ 工具�
 
 验证另包含 Windows x64/arm64、macOS x64/arm64、Linux x64/arm64/armv7l 的无发布打包。
 跨架构打包仅验证包可生成，不表示目标架构已运行测试；Linux ARM 打包需要对应 GNU 交叉编译器。
+只有 Linux ARM 打包在打包前导出目标 `CC`/`CXX`；宿主架构和 macOS/Windows 保留 runner 的默认编译器，避免空矩阵值覆盖默认环境。
 每个打包 job 还检查实际包内 ASAR 的 SQLite 绑定与 Electron 可执行文件的二进制架构，防止夹带宿主架构的原生模块。
 Windows 7 的旧 Electron 22 打包仍属于兼容产物，不代表 CI 在 Windows 7 实机运行过。
 三端测试和打包任一失败、取消或跳过，`All platforms passed` 门禁都会失败；
@@ -61,14 +62,21 @@ node e2e/smoke.js  # 仅冒烟：启动+页面文本+错误采集
 - **数据隔离**：macOS 上 Electron 的 `userData` **不跟随 `$HOME`**，必须传
   `--user-data-dir=<临时目录>`（见 `harness.js`），否则会读写真实用户数据。
   这是踩坑后的硬性约定，请勿回退成 HOME 方案。
-- 首次启动需过“许可协议”倒计时与“开源声明”弹窗，`acceptAgreement()` 已处理。
+- 首次启动需过“许可协议”倒计时与“开源声明”弹窗，共同的 `harness.acceptAgreement()` 等待按钮真实启用并点击，
+  校验同意状态和许可弹窗隐藏，再等待并确认延迟出现的声明。只有状态已同意的重启 profile 可以跳过；按钮缺失会失败。
+- 四条当前门禁统一使用中文测试 profile，避免 runner 系统语言影响其他中文 UI 断言；助手也支持英文等正向接受按钮，
+  不会预写同意状态。普通遮罩兜底遇到许可协议会明确失败，禁止误点第一个“不接受/Decline”按钮导致退出。
+- profile 的 `setting.version` 使用生产配置版本 `2.1.0`，与外层应用版本分开；多活音源也复用同一 profile 工厂。
+  CI 构建后运行 `profileLanguage.js`，在 `--lang=en-US` 环境经过真实生产迁移和 renderer 初始化，
+  分别确认默认中文、显式英文及当前应用版本 metadata profile 的语言；只检查落盘 JSON 不能证明语言设置生效。
 - 首启“更新日志”弹窗（`common.showChangeLog`）在版本信息网络返回后才弹出、时机不定，
   常拦截后续点击造成随机级联超时；`harness.js` 已在新建 profile 时预写
   `LxDatas/config_v2.json` 关闭它。兜底仍保留 `pathProbe.dismissOverlayModal()`。
 - 播放栏按钮是 `div[aria-label]` 而非 `<button>`，选择器用 `[aria-label=…]` 通用属性匹配。
 - 默认开启“源名伪装”（小蜗=酷我、小芸=网易云、小秋=腾讯、小枸=酷狗），断言用别名。
 - 搜索/播放依赖外网音源，偶发失败属网络波动（套件其余步骤仍会继续）。
-- 失败截图与 mock LLM 请求记录写入 `$TMPDIR/lx-e2e-artifacts/`。
+- 截图、main/renderer console、进程 stdout/stderr、关闭/崩溃事件写入 `${RUNNER_TEMP}/lx-e2e-artifacts/`，
+  本机未设置 `RUNNER_TEMP` 时使用系统临时目录；截图失败也保存错误文本。CI 测试失败时上传对应系统的诊断 artifact。
 
 ## 路径点击跳播探针（pathProbe.js）
 
