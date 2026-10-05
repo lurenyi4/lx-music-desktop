@@ -34,6 +34,11 @@ declare global {
       'common.apiSource': string
 
       /**
+       * 备源 api id 列表（有序，仅参与播放取流失败时的轮换；第一个启用源即 common.apiSource 主源）
+       */
+      'common.apiSourceBackups': string[]
+
+      /**
        * 音源名称类型，原名、别名
        */
       'common.sourceNameType': 'alias' | 'real'
@@ -690,6 +695,55 @@ declare global {
        * 是否在离开搜索界面时自动清空搜索结果列表
        */
       'odc.isAutoClearSearchList': boolean
+
+      /**
+       * 是否启用推荐引擎的 AI 分析与排序（关闭或 Key 为空时引擎走本地排序）
+       */
+      'ai.enable': boolean
+
+      /**
+       * 推荐引擎 AI 协议
+       */
+      'ai.provider': 'openai-compatible' | 'anthropic'
+
+      /**
+       * 推荐引擎 AI 服务地址（如 https://api.openai.com/v1 或 https://api.anthropic.com/v1）
+       */
+      'ai.baseUrl': string
+
+      /**
+       * 推荐引擎 AI 密钥（仅运行时使用，不写入仓库与日志）
+       */
+      'ai.apiKey': string
+
+      /**
+       * 推荐引擎 AI 模型名
+       */
+      'ai.model': string
+
+      /** AI 模型请求并发上限（1-8，默认 3） */
+      'ai.maxConcurrentRequests': number
+
+      /**
+       * 推荐引擎：platform=平台相似推荐（默认，零 LLM，不要求 AI Key）；
+       * ai/local=旧 AI/本地引擎（显式选择才进入，平台推荐失败不会自动降级到它们）
+       */
+      'recommend.engine': 'platform' | 'ai' | 'local'
+
+      /**
+       * 推荐会话默认探索距离（10-90；仅 ai/local 引擎使用）
+       */
+      'recommend.radius': number
+
+      /**
+       * 推荐会话队列剩余不多时是否自动续补
+       */
+      'recommend.autoRefill': boolean
+
+      /**
+       * 是否开启探索电台（跟随切歌自动以当前歌重锚开台，推荐追加稍后播放队尾；持久开关，重启后为开时首次播放自动开台）
+       */
+      'recommend.radio': boolean
     }
   }
 

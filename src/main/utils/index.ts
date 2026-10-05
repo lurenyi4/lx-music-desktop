@@ -3,6 +3,7 @@ import migrateSetting from '@common/utils/migrateSetting'
 import getStore from '@main/utils/store'
 import { STORE_NAMES, URL_SCHEME_RXP } from '@common/constants'
 import defaultSetting from '@common/defaultSetting'
+import { normalizeApiSourceBackups } from '@common/userApi'
 import defaultHotKey from '@common/defaultHotKey'
 import { migrateDataJson, migrateHotKey, migrateUserApi, parseDataFile } from './migrate'
 import { nativeTheme, powerSaveBlocker } from 'electron'
@@ -74,7 +75,8 @@ export const mergeSetting = (originSetting: LX.AppSetting, targetSetting?: Parti
         const targetValue: any = targetSetting[key]
         const isPrimitive = checkPrimitiveType(targetValue)
         // if (checkPrimitiveType(value)) {
-        if (!isPrimitive || targetValue == originSettingCopy[key] || originSettingCopy[key] === undefined) continue
+        // 数组属可整体采纳的值（原始类型之外的唯一形态，如 common.apiSourceBackups），对象仍不支持
+        if ((!isPrimitive && !Array.isArray(targetValue)) || targetValue == originSettingCopy[key] || originSettingCopy[key] === undefined) continue
         updatedSettingKeys.push(key)
         updatedSetting[key] = targetValue
         // @ts-expect-error
@@ -88,7 +90,7 @@ export const mergeSetting = (originSetting: LX.AppSetting, targetSetting?: Parti
         const targetValue: any = targetSetting[key]
         const isPrimitive = checkPrimitiveType(targetValue)
         // if (checkPrimitiveType(value)) {
-        if (!isPrimitive || targetValue == originSettingCopy[key]) continue
+        if ((!isPrimitive && !Array.isArray(targetValue)) || targetValue == originSettingCopy[key]) continue
         updatedSettingKeys.push(key)
         updatedSetting[key] = targetValue
         // @ts-expect-error
@@ -100,6 +102,13 @@ export const mergeSetting = (originSetting: LX.AppSetting, targetSetting?: Parti
     }
   }
 
+  const backupKey = 'common.apiSourceBackups'
+  const backups = normalizeApiSourceBackups(originSettingCopy['common.apiSource'], originSettingCopy[backupKey])
+  if (JSON.stringify(backups) !== JSON.stringify(originSettingCopy[backupKey])) {
+    originSettingCopy[backupKey] = backups
+    updatedSetting[backupKey] = backups
+    if (!updatedSettingKeys.includes(backupKey)) updatedSettingKeys.push(backupKey)
+  }
   return {
     setting: originSettingCopy,
     updatedSettingKeys,

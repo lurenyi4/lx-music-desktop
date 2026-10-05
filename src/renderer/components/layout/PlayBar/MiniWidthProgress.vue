@@ -8,7 +8,7 @@
       <div :class="$style.title" :aria-label="title + $t('copy_tip')" @click="handleCopy(title)">
         {{ title }}
       </div>
-      <div :class="$style.status">{{ statusText }}</div>
+      <div :class="$style.status">{{ playMusicInfo.versionNotice || statusText }}</div>
     </div>
     <!-- <div :class="$style.timeContainer">
       <div :class="$style.timeContent">
@@ -21,6 +21,7 @@
       </div>
     </div> -->
     <play-progress />
+    <PlaybackQueue />
     <control-btns />
     <div :class="$style.playBtnContent">
       <div :class="$style.playBtn" :aria-label="$t('player__prev')" @click="playPrev()">
@@ -50,6 +51,7 @@ import { computed } from '@common/utils/vueTools'
 import { useRouter } from '@common/utils/vueRouter'
 import { clipboardWriteText } from '@common/utils/electron'
 import ControlBtns from './ControlBtns.vue'
+import PlaybackQueue from './PlaybackQueue.vue'
 import PlayProgress from './PlayProgress.vue'
 import usePlayProgress from '@renderer/utils/compositions/usePlayProgress'
 // import { lyric } from '@renderer/core/share/lyric'
@@ -74,6 +76,7 @@ export default {
   name: 'CorePlayBar',
   components: {
     ControlBtns,
+    PlaybackQueue,
     PlayProgress,
   },
   setup() {
@@ -125,6 +128,7 @@ export default {
 
     return {
       musicInfo,
+      playMusicInfo,
       nowPlayTimeStr,
       maxPlayTimeStr,
       progress,

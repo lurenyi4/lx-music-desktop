@@ -1,3 +1,4 @@
+import { MusicSdkResponseError } from '../responseError'
 import { formatPlayTime, sizeFormate } from '../../index'
 import { formatSingerName } from '../utils'
 import { signRequest } from './utils'
@@ -8,8 +9,8 @@ export default {
   page: 0,
   allPage: 1,
   successCode: 0,
-  musicSearch(str, page, limit, retryNum = 0) {
-    if (retryNum > 5) return Promise.reject(new Error('搜索失败'))
+  musicSearch(str, page, limit, retryNum = 0, cancelState = { cancelled: false, request: null }) {
+    if (cancelState.cancelled) return Promise.reject(new Error('request cancelled'))
     const searchRequest = signRequest({
       comm: {
         _channelid: '0',
@@ -41,14 +42,22 @@ export default {
         },
       },
     })
-    return searchRequest.then(({ body }) => {
+    cancelState.request = searchRequest
+    const promise = searchRequest.then(({ body }) => {
+      if (cancelState.cancelled) throw new Error('request cancelled')
       // console.log(body)
       const req = body?.['music.search.SearchCgiService'] ?? body?.req
-      if (!req || body.code != this.successCode || req.code != this.successCode) {
-        return this.musicSearch(str, page, limit, ++retryNum)
-      }
-      return req.data
+      if (!req || typeof body.code !== 'number' || typeof req.code !== 'number') throw new MusicSdkResponseError()
+      if (body.code !== this.successCode || req.code !== this.successCode) throw new Error('搜索失败')
+      const data = req.data
+      if (!Array.isArray(data?.body?.song?.list) || !Number.isFinite(data?.meta?.sum) || data.meta.sum < 0) throw new MusicSdkResponseError()
+      return data
     })
+    promise.cancel = () => {
+      cancelState.cancelled = true
+      cancelState.request?.cancel?.()
+    }
+    return promise
   },
   /**
    * PC 客户端版 searchid：32 位大写十六进制 GUID + 5 位补零随机数 = 37 字符。
@@ -106,6 +115,7 @@ export default {
       }
       list.push({
         singer: formatSingerName(item.singer, 'name'),
+        artists: item.singer?.map(artist => ({ id: artist.mid, name: artist.name })),
         // name: item.name + (item.title_extra ?? ''),
         name: item.title,
         albumName,
@@ -129,7 +139,9 @@ export default {
   },
   search(str, page = 1, limit) {
     if (limit == null) limit = this.limit
-    return this.musicSearch(str, page, limit).then(({ body, meta }) => {
+    const cancelState = { cancelled: false, request: null }
+    const request = this.musicSearch(str, page, limit, 0, cancelState)
+    const promise = request.then(({ body, meta }) => {
       let list = this.handleResult(body.song.list)
 
       this.total = meta.sum
@@ -144,5 +156,10 @@ export default {
         source: 'tx',
       })
     })
+    promise.cancel = () => {
+      cancelState.cancelled = true
+      cancelState.request?.cancel?.()
+    }
+    return promise
   },
 }

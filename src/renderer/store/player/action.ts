@@ -13,6 +13,7 @@ import {
   playedList,
   tempPlayList,
 } from './state'
+import { getQueueSource, resetQueueSession } from './queueSession'
 import { getListMusicsFromCache } from '@renderer/store/list/action'
 import { downloadList } from '@renderer/store/download/state'
 import { setProgress } from './playProgress'
@@ -70,12 +71,15 @@ export const setShowPlayLrcSelectContentLrc = (val: boolean) => {
 }
 
 export const setPlayListId = (listId: string | null) => {
+  resetQueueSession()
   playInfo.playerListId = listId
 }
 
 export const getList = (listId: string | null): Array<LX.Music.MusicInfo | LX.Download.ListItem> => {
   return listId == LIST_IDS.DOWNLOAD ? downloadList : getListMusicsFromCache(listId)
 }
+
+export const getPlaybackList = (listId: string | null) => getQueueSource(listId, getList(listId))
 
 /**
  * 更新播放位置
@@ -94,7 +98,7 @@ export const getPlayIndex = (listId: string | null, musicInfo: LX.Download.ListI
   playIndex: number
   playerPlayIndex: number
 } => {
-  const playerList = getList(playInfo.playerListId)
+  const playerList = getPlaybackList(playInfo.playerListId)
 
   // if (listIndex < 0) throw new Error('music info not found')
   // playInfo.playIndex = listIndex
@@ -106,14 +110,15 @@ export const getPlayIndex = (listId: string | null, musicInfo: LX.Download.ListI
   }
 
   const list = getList(listId)
-  if (list.length && musicInfo) {
+  if (musicInfo) {
     const currentId = musicInfo.id
     playIndex = list.findIndex(m => m.id == currentId)
     if (!isTempPlay) {
-      if (playIndex < 0) {
+      const queueIndex = playerList.findIndex(m => m.id == currentId)
+      if (queueIndex < 0) {
         playerPlayIndex = playerPlayIndex < 1 ? (list.length - 1) : (playerPlayIndex - 1)
       } else {
-        playerPlayIndex = playIndex
+        playerPlayIndex = queueIndex
       }
     }
   }
@@ -141,6 +146,9 @@ export const resetPlayerMusicInfo = () => {
 
 const setPlayerMusicInfo = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem | null) => {
   if (musicInfo) {
+    const savedId = musicInfo.id
+    const original = 'progress' in musicInfo ? musicInfo.metadata.musicInfo : musicInfo
+    if (original.meta.toggleMusicInfo) musicInfo = { ...original.meta.toggleMusicInfo, id: savedId }
     setMusicInfo('progress' in musicInfo ? {
       id: musicInfo.id,
       pic: musicInfo.metadata.musicInfo.meta.picUrl,
@@ -173,12 +181,15 @@ const setPlayerMusicInfo = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
  * @param musicInfo 歌曲信息
  * @param isTempPlay 是否临时播放
  */
-export const setPlayMusicInfo = (listId: string | null, musicInfo: LX.Download.ListItem | LX.Music.MusicInfo | null, isTempPlay: boolean = false) => {
+export const setPlayMusicInfo = (listId: string | null, musicInfo: LX.Download.ListItem | LX.Music.MusicInfo | null, isTempPlay: boolean = false, alternativeMusicInfos?: LX.Music.MusicInfoOnline[], reason: LX.Player.MusicChangeReason = 'user') => {
   musicInfo = toRaw(musicInfo)
 
   playMusicInfo.listId = listId
+  playMusicInfo.resolvedMusicInfo = undefined
+  playMusicInfo.versionNotice = undefined
   playMusicInfo.musicInfo = musicInfo
   playMusicInfo.isTempPlay = isTempPlay
+  playMusicInfo.alternativeMusicInfos = alternativeMusicInfos?.map(info => toRaw(info))
 
   setPlayerMusicInfo(musicInfo)
 
@@ -193,8 +204,19 @@ export const setPlayMusicInfo = (listId: string | null, musicInfo: LX.Download.L
 
     playInfo.playIndex = playIndex
     playInfo.playerPlayIndex = playerPlayIndex
-    window.app_event.musicToggled()
+    window.app_event.musicToggled(reason)
   }
+}
+
+/** 同曲换源只替换列表中的播放身份，保留音频、进度、歌词和电台锚点。 */
+export const replacePlayMusicInfo = (listId: string, original: LX.Music.MusicInfoOnline, replacement: LX.Music.MusicInfoOnline) => {
+  if (playMusicInfo.listId !== listId || playMusicInfo.musicInfo !== original) return
+  playMusicInfo.musicInfo = toRaw(replacement)
+  for (const item of playedList) {
+    if (item.listId === listId && item.musicInfo.id === original.id) item.musicInfo = toRaw(replacement)
+  }
+  setMusicInfo({ id: replacement.id, name: replacement.name, singer: replacement.singer, album: replacement.meta.albumName })
+  updatePlayIndex()
 }
 
 /**
@@ -233,8 +255,8 @@ export const addTempPlayList = (list: LX.Player.TempPlayListItem[]) => {
     }
     return true
   })
-  if (topList.length) arrUnshift(tempPlayList, topList.map(({ musicInfo, listId }) => ({ musicInfo, listId, isTempPlay: true })))
-  if (bottomList.length) arrPush(tempPlayList, bottomList.map(({ musicInfo, listId }) => ({ musicInfo, listId, isTempPlay: true })))
+  if (topList.length) arrUnshift(tempPlayList, topList.map(({ isTop, ...item }) => ({ ...item, isTempPlay: true })))
+  if (bottomList.length) arrPush(tempPlayList, bottomList.map(({ isTop, ...item }) => ({ ...item, isTempPlay: true })))
 
   if (!playMusicInfo.musicInfo) void playNext()
 }

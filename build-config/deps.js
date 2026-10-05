@@ -3,53 +3,55 @@ const path = require('path')
 const bindingFilePath = path.join(__dirname, '../node_modules/better-sqlite3/binding.gyp')
 const bindingBakFilePath = path.join(__dirname, '../node_modules/better-sqlite3/binding.gyp.bak')
 exports.beforePack = async() => {
-  if (!fs.existsSync(bindingFilePath)) return
-  fs.renameSync(bindingFilePath, bindingBakFilePath)
-  // try {
-  //   fs.writeFileSync(
-  //     bindingFilePath,
-  //     fs.readFileSync(bindingFilePath, 'utf-8').replace('\'force_build%\': 0,', '\'force_build%\': 1,'),
-  //   )
-  // } catch (error) {
-  //   console.error(error)
-  // }
+  if (fs.existsSync(bindingFilePath)) fs.renameSync(bindingFilePath, bindingBakFilePath)
 }
 exports.afterPack = async() => {
-  if (fs.existsSync(bindingFilePath)) return
-  fs.renameSync(bindingBakFilePath, bindingFilePath)
-  // try {
-  //   fs.writeFileSync(
-  //     bindingFilePath,
-  //     fs.readFileSync(bindingFilePath, 'utf-8').replace('\'force_build%\': 1,', '\'force_build%\': 0,'),
-  //   )
-  // } catch (error) {
-  //   console.error(error)
-  // }
+  if (!fs.existsSync(bindingFilePath) && fs.existsSync(bindingBakFilePath)) fs.renameSync(bindingBakFilePath, bindingFilePath)
 }
 
-
-const replaceSqliteLib = async(arch) => {
-  // console.log(await fs.readdir(path.join(context.appOutDir, './resources/')))
-  // if (context.electronPlatformName != 'linux' || context.arch != Arch.arm64) return
-  // https://github.com/lyswhut/lx-music-desktop/issues/1102
-  // https://github.com/lyswhut/lx-music-desktop/issues/1161
-  console.log('replace sqlite lib...')
-  const filePath = path.join(__dirname, `./lib/better_sqlite3_${process.platform}-${arch}.node`)
-  console.log(filePath)
-  const targetPath = path.join(__dirname, '../node_modules/better-sqlite3/build/Release/better_sqlite3.node')
-  await fs.promises.unlink(targetPath).catch(_ => _)
-  await fs.promises.copyFile(filePath, targetPath)
-}
-exports.copyLib = async(arch = process.arch, replaceLocal = false) => {
-  if (process.platform === 'linux' || replaceLocal) {
-    await replaceSqliteLib(arch)
+// Use the locked package's N-API binding when available. The application and
+// packager both explicitly load build/Release, unlike SQLite's default loader.
+exports.copyLib = async(arch = process.arch, electronVersion = require('electron/package.json').version) => {
+  const target = path.join(__dirname, '../node_modules/better-sqlite3/build/Release/better_sqlite3.node')
+  // Windows 7 packages intentionally use Electron 22 and the legacy bindings.
+  if (parseInt(electronVersion) === 22 && process.platform === 'win32') {
+    const source = path.join(__dirname, `lib/better_sqlite3_win32-${arch}.node`)
+    await fs.promises.mkdir(path.dirname(target), { recursive: true })
+    await fs.promises.copyFile(source, target)
     return
   }
-  const libPath = path.join(__dirname, `../node_modules/better-sqlite3/prebuilds/${process.platform}-${arch}.node`)
-  if (!fs.existsSync(libPath)) {
-    console.error(`Better-sqlite3 prebuild not found for ${process.platform}-${arch}`)
+  await exports.afterPack()
+  const prebuild = path.join(__dirname, `../node_modules/better-sqlite3/prebuilds/${process.platform}-${arch}.node`)
+  if (fs.existsSync(prebuild)) {
+    await fs.promises.mkdir(path.dirname(target), { recursive: true })
+    await fs.promises.copyFile(prebuild, target)
     return
   }
-  const targetPath = path.join(__dirname, '../node_modules/better-sqlite3/build/Release/better_sqlite3.node')
-  await fs.promises.cp(libPath, targetPath, { recursive: true, force: true })
+  const { rebuild } = await import('@electron/rebuild')
+  const crossCompiler = process.platform === 'linux' && arch !== process.arch
+    ? { arm64: 'aarch64-linux-gnu', arm: 'arm-linux-gnueabihf' }[arch]
+    : null
+  const previous = { CC: process.env.CC, CXX: process.env.CXX, GYP_DEFINES: process.env.GYP_DEFINES }
+  // better-sqlite3 otherwise skips compilation when the host has a prebuild,
+  // even if the requested target architecture (e.g. ARMv7) has none.
+  process.env.GYP_DEFINES = `${previous.GYP_DEFINES ?? ''} force_build=1`.trim()
+  if (crossCompiler) {
+    process.env.CC = `${crossCompiler}-gcc`
+    process.env.CXX = `${crossCompiler}-g++`
+  }
+  try {
+    await rebuild({
+      buildPath: path.resolve(__dirname, '..'),
+      electronVersion,
+      arch,
+      onlyModules: ['better-sqlite3'],
+      force: true,
+    })
+  } finally {
+    for (const key of ['CC', 'CXX', 'GYP_DEFINES']) {
+      if (previous[key] === undefined) delete process.env[key]
+      else process.env[key] = previous[key]
+    }
+  }
+  if (!fs.existsSync(target)) throw new Error(`SQLite binding missing after rebuild: ${process.platform}-${arch}`)
 }

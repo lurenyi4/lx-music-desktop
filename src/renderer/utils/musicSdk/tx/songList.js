@@ -1,3 +1,4 @@
+import { MusicSdkResponseError } from '../responseError'
 import { httpFetch } from '../../request'
 import { decodeName, formatPlayTime, sizeFormate, dateFormat, formatPlayCount } from '../../index'
 import { formatSingerName } from '../utils'
@@ -396,8 +397,7 @@ export default {
     return `https://y.qq.com/n/ryqq/playlist/${id}`
   },
 
-  search(text, page, limit = 20, retryNum = 0) {
-    if (retryNum > 5) throw new Error('max retry')
+  search(text, page, limit = 20) {
     return httpFetch(`http://c.y.qq.com/soso/fcgi-bin/client_music_search_songlist?page_no=${page - 1}&num_per_page=${limit}&format=json&query=${encodeURIComponent(text)}&remoteplace=txt.yqq.playlist&inCharset=utf8&outCharset=utf-8`, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; WOW64; Trident/5.0)',
@@ -405,7 +405,9 @@ export default {
       },
     })
       .promise.then(({ body }) => {
-        if (body.code != 0) return this.search(text, page, limit, ++retryNum)
+        if (typeof body?.code !== 'number') throw new MusicSdkResponseError()
+        if (body.code !== 0) throw new Error('搜索失败')
+        if (!Array.isArray(body.data?.list) || !Number.isFinite(body.data?.sum) || body.data.sum < 0) throw new MusicSdkResponseError()
         // console.log(body.data.list)
         return {
           list: body.data.list.map(item => {

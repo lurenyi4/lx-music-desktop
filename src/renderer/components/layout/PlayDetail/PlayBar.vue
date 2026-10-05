@@ -12,7 +12,8 @@
           />
         </div>
       </div>
-      <div :class="$style.timeLabel"><span :class="$style.status" style="margin-right: 15px">{{ status }}</span><span>{{ nowPlayTimeStr }}</span><span style="margin: 0 5px;">/</span><span>{{ maxPlayTimeStr }}</span></div>
+      <PlaybackQueue />
+      <div :class="$style.timeLabel"><span :class="$style.status" style="margin-right: 15px">{{ playMusicInfo.versionNotice || status }}</span><span>{{ nowPlayTimeStr }}</span><span style="margin: 0 5px;">/</span><span>{{ maxPlayTimeStr }}</span></div>
     </div>
     <div :class="$style.playControl">
       <div :class="$style.playBtn" :aria-label="$t('player__prev')" @click="playPrev()">
@@ -39,10 +40,11 @@
 
 <script setup>
 import { playNext, playPrev, togglePlay } from '@renderer/core/player'
-import { status, isPlay } from '@renderer/store/player/state'
+import { status, isPlay, playMusicInfo } from '@renderer/store/player/state'
 import usePlayProgress from '@renderer/utils/compositions/usePlayProgress'
 
 import ControlBtns from './components/ControlBtns.vue'
+import PlaybackQueue from '../PlayBar/PlaybackQueue.vue'
 
 const {
   nowPlayTimeStr,

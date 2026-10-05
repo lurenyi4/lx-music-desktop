@@ -184,6 +184,7 @@ export default {
       } else {
         list.push({
           singer: formatSingerName(item.ar, 'name'),
+          artists: item.ar?.map(artist => ({ id: artist.id, name: artist.name })),
           name: item.name ?? '',
           albumName: item.al?.name,
           albumId: item.al?.id,

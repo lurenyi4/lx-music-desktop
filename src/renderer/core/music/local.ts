@@ -1,5 +1,4 @@
 import { encodePath } from '@common/utils/common'
-import { updateListMusics } from '@renderer/store/list/action'
 import { saveLyric, saveMusicUrl } from '@renderer/utils/ipc'
 import { getLocalFilePath } from '@renderer/utils/music'
 
@@ -66,10 +65,11 @@ const getOtherSourceByLocal = async<T>(musicInfo: LX.Music.MusicInfoLocal, handl
   throw new Error('source not found')
 }
 
-export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = true, onToggleSource = () => {} }: {
+export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = true, onResolvedMusicInfo, onToggleSource = () => {} }: {
   musicInfo: LX.Music.MusicInfoLocal
   isRefresh: boolean
   allowToggleSource?: boolean
+  onResolvedMusicInfo?: (musicInfo: LX.Music.MusicInfoOnline) => void
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
 }): Promise<string> => {
   if (!isRefresh) {
@@ -92,13 +92,13 @@ export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = tru
       // saveLyric(musicInfo, data.lyricInfo)
       if (!isFromCache) void saveMusicUrl(targetMusicInfo, targetQuality, url)
 
-      // TODO: save url ?
+      onResolvedMusicInfo?.(targetMusicInfo)
       return url
     })
   })
 }
 
-export const getPicUrl = async({ musicInfo, listId, isRefresh, onToggleSource = () => {} }: {
+export const getPicUrl = async({ musicInfo, isRefresh, onToggleSource = () => {} }: {
   musicInfo: LX.Music.MusicInfoLocal
   listId?: string | null
   isRefresh: boolean
@@ -120,11 +120,7 @@ export const getPicUrl = async({ musicInfo, listId, isRefresh, onToggleSource = 
   onToggleSource()
   return getOtherSourceByLocal(musicInfo, async(otherSource) => {
     return getOnlineOtherSourcePicUrl({ musicInfos: [...otherSource], onToggleSource, isRefresh }).then(({ url, musicInfo: targetMusicInfo, isFromCache }) => {
-      if (listId) {
-        musicInfo.meta.picUrl = url
-        void updateListMusics([{ id: listId, musicInfo }])
-      }
-
+      // Temporary artwork never writes a full music object back to a saved list.
       return url
     })
   })

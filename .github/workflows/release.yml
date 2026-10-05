@@ -9,48 +9,23 @@ env:
   IS_CI: 'true'
 
 jobs:
-  # CheckCode:
-  #   name: Lint Code
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Check out git repository
-  #       uses: actions/checkout@v6
-
-  #     - name: Install Node.js
-  #       uses: actions/setup-node@v4
-  #       with:
-  #         node-version: 20
-
-  #     - name: Cache file
-  #       uses: actions/cache@v4
-  #       with:
-  #         path: |
-  #           node_modules
-  #           $HOME/.cache/electron
-  #           $HOME/.cache/electron-builder
-  #           $HOME/.npm/_prebuilds
-  #         key: ${{ runner.os }}-build-caches-${{ hashFiles('**/package-lock.json') }}
-  #         restore-keys: |
-  #           ${{ runner.os }}-build-
-
-  #     - name: Install Dependencies
-  #       run: |
-  #         npm ci
-
-  #     - name: Lint src code
-  #       run: npm run lint
+  validate:
+    uses: ./.github/workflows/validate.yml
 
   Windows:
+    needs: validate
     name: Windows
     runs-on: windows-latest
-    # needs: CheckCode
     steps:
       - name: Check out git repository
         uses: actions/checkout@v6
 
       - name: Get npm cache directory
         shell: pwsh
-        run: echo "NPM_CACHE=$(npm config get cache)" >> $env:GITHUB_ENV
+        run: |
+          $npmCache = npm config get cache
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "NPM_CACHE=$npmCache" >> $env:GITHUB_ENV
 
       - name: Show Env
         run: echo "${{ env.NPM_CACHE }}"
@@ -63,14 +38,20 @@ jobs:
       - name: Build src code
         run: |
           git status --porcelain
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Release package
         run: |
           npm run publish:win:7z:x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run publish:win:7z:arm64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run publish:win:setup:arm64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run publish:win:setup:x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BT_TOKEN: ${{ secrets.BT_TOKEN }}
@@ -80,18 +61,20 @@ jobs:
           cd build
           Get-FileHash *.exe,*.7z -Algorithm MD5 | Format-List
 
-
   Windows_7:
+    needs: validate
     name: Windows_7
     runs-on: windows-latest
-    # needs: CheckCode
     steps:
       - name: Check out git repository
         uses: actions/checkout@v6
 
       - name: Get npm cache directory
         shell: pwsh
-        run: echo "NPM_CACHE=$(npm config get cache)" >> $env:GITHUB_ENV
+        run: |
+          $npmCache = npm config get cache
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "NPM_CACHE=$npmCache" >> $env:GITHUB_ENV
 
       - name: Setup Node Env
         env:
@@ -101,6 +84,7 @@ jobs:
       - name: Prepare win7 undici env
         run: |
           npm install undici@5
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Set-Content -Path .\src\common\utils\request.ts -Value "export * from './request_node16'"
 
       - name: Build src code
@@ -108,18 +92,25 @@ jobs:
           BUILD_WIN7: true
         run: |
           git status --porcelain
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Prepare win7 electron env
         run: |
           npm install electron@22 better-sqlite3@12
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           pip.exe install setuptools
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Release win7 package
         run: |
           npm run publish:win7:setup:x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run publish:win7:7z:x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run publish:win7:7z:x86
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BT_TOKEN: ${{ secrets.BT_TOKEN }}
@@ -130,9 +121,9 @@ jobs:
           Get-FileHash *.exe,*.7z -Algorithm MD5 | Format-List
 
   Mac:
+    needs: validate
     name: Mac
     runs-on: macos-latest
-    # needs: CheckCode
     steps:
       - name: Check out git repository
         uses: actions/checkout@v6
@@ -170,12 +161,12 @@ jobs:
           md5 *.dmg
 
   Linux:
+    needs: validate
     name: Linux
     runs-on: ubuntu-latest
-    # needs: CheckCode
     steps:
       - name: Install package
-        run: sudo apt-get update && sudo apt-get install -y rpm libarchive-tools
+        run: sudo apt-get update && sudo apt-get install -y rpm libarchive-tools gcc-aarch64-linux-gnu g++-aarch64-linux-gnu gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
 
       - name: Check out git repository
         uses: actions/checkout@v6

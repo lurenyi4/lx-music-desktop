@@ -1,6 +1,5 @@
 import { toRaw, markRawList } from '@common/utils/vueTools'
 // import { qualityList } from '@renderer/store'
-import { clearPlayedList } from '@renderer/store/player/action'
 import { appSetting } from '@renderer/store/setting'
 import { dislikeInfo } from '@renderer/store/dislikeList'
 import { setPowerSaveBlocker as setPowerSaveBlockerRemote } from '@renderer/utils/ipc'
@@ -22,24 +21,27 @@ export const filterList = async({ playedList, listId, list, playerMusicInfo, isN
   list: Array<LX.Music.MusicInfo | LX.Download.ListItem>
   playerMusicInfo?: LX.Music.MusicInfo | LX.Download.ListItem
   isNext: boolean
-}) => {
+}): Promise<{
+  filteredList: Array<LX.Music.MusicInfo | LX.Download.ListItem>
+  playerIndex: number
+  shouldResetPlayedList?: boolean
+}> => {
+  const history = playedList.map(item => toRaw(item))
   // if (this.list.listName === null) return
   // console.log(isCheckFile)
   let { filteredList, canPlayList, playerIndex } = await window.lx.worker.main.filterMusicList({
     listId,
     list: list.map(m => toRaw(m)),
-    playedList: toRaw(playedList),
+    playedList: history,
     // savePath: appSetting['download.savePath'],
     playerMusicInfo: toRaw(playerMusicInfo),
     dislikeInfo: { names: toRaw(dislikeInfo.names), musicNames: toRaw(dislikeInfo.musicNames), singerNames: toRaw(dislikeInfo.singerNames) },
     isNext,
   })
 
-  if (!filteredList.length && playedList.length) {
-    clearPlayedList()
-    return { filteredList: markRawList(canPlayList), playerIndex }
-  }
-  return { filteredList: markRawList(filteredList), playerIndex }
+  // Filtering has no playback-state side effects. Only a still-valid caller owns round rollover.
+  const shouldResetPlayedList = !filteredList.length && history.length > 0
+  return { filteredList: markRawList(shouldResetPlayedList ? canPlayList : filteredList), playerIndex, shouldResetPlayedList }
 }
 
 let timeout: NodeJS.Timeout | null = null

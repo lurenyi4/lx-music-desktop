@@ -39,11 +39,11 @@
                   <span v-else-if="item.meta._qualitys['320k']" class="no-select badge badge-theme-secondary">{{ $t('tag__high_quality') }}</span>
                   <span v-if="sourceTag" class="no-select badge badge-theme-tertiary">{{ item.source }}</span>
                 </div>
-                <div class="list-item-cell" style="flex: 0 0 22%;"><span class="select" :aria-label="item.singer">{{ item.singer }}</span></div>
-                <div class="list-item-cell" style="flex: 0 0 22%;"><span class="select" :aria-label="item.meta.albumName">{{ item.meta.albumName }}</span></div>
+                <div class="list-item-cell" style="flex: 0 0 22%;"><common-catalog-link :music="item" kind="artist" /></div>
+                <div class="list-item-cell" style="flex: 0 0 22%;"><common-catalog-link :music="item" kind="album" /></div>
                 <div class="list-item-cell" style="flex: 0 0 9%;"><span class="no-select">{{ item.interval || '--/--' }}</span></div>
                 <div class="list-item-cell" style="flex: 0 0 16%; padding-left: 0; padding-right: 0;">
-                  <material-list-buttons :index="index" :remove-btn="false" :download-btn="assertApiSupport(item.source)" :play-btn="checkApiSource ? assertApiSupport(item.source) : true" @btn-click="handleListBtnClick" />
+                  <material-list-buttons :index="index" :remove-btn="false" :download-btn="assertApiSupport(item.source)" :play-btn="checkApiSource ? assertPlaybackSupport(item.source) : true" @btn-click="handleListBtnClick" />
                 </div>
               </div>
             </template>
@@ -67,8 +67,8 @@
                   <span v-else-if="item.meta._qualitys['320k']" class="no-select badge badge-theme-secondary">{{ $t('tag__high_quality') }}</span>
                   <span v-if="sourceTag" class="no-select badge badge-theme-tertiary">{{ item.source }}</span>
                 </div>
-                <div class="list-item-cell" style="flex: 0 0 24%;"><span class="select" :aria-label="item.singer">{{ item.singer }}</span></div>
-                <div class="list-item-cell" style="flex: 0 0 27%;"><span class="select" :aria-label="item.meta.albumName">{{ item.meta.albumName }}</span></div>
+                <div class="list-item-cell" style="flex: 0 0 24%;"><common-catalog-link :music="item" kind="artist" /></div>
+                <div class="list-item-cell" style="flex: 0 0 27%;"><common-catalog-link :music="item" kind="album" /></div>
                 <div class="list-item-cell" style="flex: 0 0 10%;"><span class="no-select">{{ item.interval || '--/--' }}</span></div>
               </div>
             </template>
@@ -101,6 +101,7 @@
 <script>
 import { clipboardWriteText } from '@common/utils/electron'
 import { assertApiSupport } from '@renderer/store/utils'
+import { assertPlaybackSupport } from '@renderer/core/music/sourceCapabilities'
 import { ref } from '@common/utils/vueTools'
 import useList from './useList'
 import useMenu from './useMenu'
@@ -192,6 +193,7 @@ export default {
     } = useMenu({
       props,
       assertApiSupport,
+      assertPlaybackSupport,
       emit,
 
       handleShowDownloadModal,
@@ -268,6 +270,7 @@ export default {
 
       handleListRightClick,
       assertApiSupport,
+      assertPlaybackSupport,
 
       isShowListAdd,
       isShowListAddMultiple,

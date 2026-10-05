@@ -105,6 +105,7 @@ const modules = {
     import_user_api: 'import_user_api',
     remove_user_api: 'remove_user_api',
     set_user_api: 'set_user_api',
+    set_user_api_backups: 'set_user_api_backups',
     get_user_api_list: 'get_user_api_list',
     request_user_api: 'request_user_api',
     request_user_api_cancel: 'request_user_api_cancel',
@@ -169,6 +170,9 @@ const modules = {
     status: 'status',
     set_config: 'set_config',
   },
+  recommendation: {
+    llm_complete: 'llm_complete',
+  },
 }
 
 
@@ -193,3 +197,4 @@ export const DISLIKE_EVENT_NAME = modules.dislike
 export const WIN_MAIN_RENDERER_EVENT_NAME = modules.winMain
 export const WIN_LYRIC_RENDERER_EVENT_NAME = modules.winLyric
 export const HOTKEY_RENDERER_EVENT_NAME = modules.hotKey
+export const RECOMMENDATION_EVENT_NAME = modules.recommendation

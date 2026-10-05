@@ -6,7 +6,10 @@ import { openDevTools as handleOpenDevTools } from '@main/utils'
 import USER_API_RENDERER_EVENT_NAME from './rendererEvent/name'
 import { getScript } from './utils'
 
-let browserWindow: Electron.BrowserWindow | null = null
+/** 已加载音源的窗口注册表：apiId -> 隐藏窗口（多活音源，一源一窗，脚本彼此隔离） */
+const windows = new Map<string, Electron.BrowserWindow>()
+/** 窗口 webContents id -> apiId（用于窗口→主进程事件按来源路由） */
+const webContentsApiMap = new Map<number, string>()
 
 let html: string | null = null
 let dir: string | null = null
@@ -44,19 +47,21 @@ export const getProxy = () => {
 }
 const handleUpdateProxy = (keys: Array<keyof LX.AppSetting>) => {
   if (keys.includes('network.proxy.enable') || (global.lx.appSetting['network.proxy.enable'] && keys.some(k => k.startsWith('network.proxy.')))) {
-    sendEvent(USER_API_RENDERER_EVENT_NAME.proxyUpdate, getProxy())
+    broadcastEvent(USER_API_RENDERER_EVENT_NAME.proxyUpdate, getProxy())
   }
 }
 
-const winEvent = () => {
-  if (!browserWindow) return
+const winEvent = (apiId: string, browserWindow: Electron.BrowserWindow) => {
+  const webContentsId = browserWindow.webContents.id
   browserWindow.on('closed', () => {
-    browserWindow = null
+    if (windows.get(apiId) === browserWindow) windows.delete(apiId)
+    webContentsApiMap.delete(webContentsId)
+    if (!windows.size) global.lx.event_app.off('updated_config', handleUpdateProxy)
   })
 }
 
 export const createWindow = async(userApi: LX.UserApi.UserApiInfo) => {
-  await closeWindow()
+  await closeWindow(userApi.id)
   dir ??= process.env.NODE_ENV !== 'production' ? webpackUserApiPath : path.join(__dirname, 'userApi')
 
   if (!html) {
@@ -71,7 +76,7 @@ export const createWindow = async(userApi: LX.UserApi.UserApiInfo) => {
   /**
    * Initial window options
    */
-  browserWindow = new BrowserWindow({
+  const browserWindow = new BrowserWindow({
     // enableRemoteModule: false,
     resizable: false,
     minimizable: false,
@@ -81,6 +86,7 @@ export const createWindow = async(userApi: LX.UserApi.UserApiInfo) => {
     hasShadow: false,
     show: false,
     webPreferences: {
+      partition: `user-api-${userApi.id}`,
       contextIsolation: true,
       // worldSafeExecuteJavaScript: true,
       nodeIntegration: false,
@@ -105,50 +111,77 @@ export const createWindow = async(userApi: LX.UserApi.UserApiInfo) => {
       event.preventDefault()
     })
   }
-  browserWindow.webContents.session.setPermissionRequestHandler((webContents, permission, resolve) => {
-    if (webContents === browserWindow?.webContents) {
-      resolve(false)
-      return
-    }
-    resolve(true)
+  browserWindow.webContents.session.setPermissionCheckHandler(() => false)
+  browserWindow.webContents.session.setPermissionRequestHandler((_webContents, _permission, resolve) => {
+    resolve(false)
   })
   browserWindow.webContents.setWindowOpenHandler(() => {
     return { action: 'deny' }
   })
 
-  winEvent()
+  if (!windows.size) global.lx.event_app.on('updated_config', handleUpdateProxy)
+  windows.set(userApi.id, browserWindow)
+  webContentsApiMap.set(browserWindow.webContents.id, userApi.id)
+  winEvent(userApi.id, browserWindow)
 
   // console.log(html.replace('</body>', `<script>${userApi.script}</script></body>`))
   // const randomNum = Math.random().toString().substring(2, 10)
-  await browserWindow.loadURL('data:text/html;charset=UTF-8,' + encodeURIComponent(html))
-
-  browserWindow.on('ready-to-show', async() => {
-    global.lx.event_app.on('updated_config', handleUpdateProxy)
-    sendEvent(USER_API_RENDERER_EVENT_NAME.initEnv, { ...userApi, script: await getScript(userApi.id), proxy: getProxy() })
+  browserWindow.once('ready-to-show', async() => {
+    const script = await getScript(userApi.id)
+    if (windows.get(userApi.id) !== browserWindow) return
+    sendEventToApi(userApi.id, USER_API_RENDERER_EVENT_NAME.initEnv, { ...userApi, script, proxy: getProxy() })
   })
+  await browserWindow.loadURL('data:text/html;charset=UTF-8,' + encodeURIComponent(html))
 
   // global.modules.userApiWindow.loadFile(join(dir, 'renderer/user-api.html'))
   // global.modules.userApiWindow.webContents.openDevTools()
 }
 
-export const closeWindow = async() => {
-  global.lx.event_app.off('updated_config', handleUpdateProxy)
+export const closeWindow = async(apiId?: string) => {
+  if (apiId == null) {
+    global.lx.event_app.off('updated_config', handleUpdateProxy)
+    if (!windows.size) return
+    const allWindows = [...windows.values()]
+    windows.clear()
+    webContentsApiMap.clear()
+    await Promise.all(allWindows.flatMap(browserWindow => [
+      browserWindow.webContents.session.clearAuthCache(),
+      browserWindow.webContents.session.clearStorageData(),
+      browserWindow.webContents.session.clearCache(),
+    ]))
+    for (const browserWindow of allWindows) browserWindow.destroy()
+    return
+  }
+  const browserWindow = windows.get(apiId)
   if (!browserWindow) return
+  windows.delete(apiId)
+  webContentsApiMap.delete(browserWindow.webContents.id)
   await Promise.all([
     browserWindow.webContents.session.clearAuthCache(),
     browserWindow.webContents.session.clearStorageData(),
     browserWindow.webContents.session.clearCache(),
   ])
-  browserWindow?.destroy()
-  browserWindow = null
+  browserWindow.destroy()
 }
 
-export const sendEvent = <T = any>(name: string, params?: T) => {
+export const hasWindow = (apiId: string): boolean => windows.has(apiId)
+
+export const getApiIdByWebContentsId = (webContentsId: number): string | undefined => webContentsApiMap.get(webContentsId)
+
+export const sendEventToApi = <T = any>(apiId: string, name: string, params?: T) => {
+  const browserWindow = windows.get(apiId)
   if (!browserWindow) return
   mainSend(browserWindow, name, params)
 }
 
-export const openDevTools = () => {
+export const broadcastEvent = <T = any>(name: string, params?: T) => {
+  for (const browserWindow of windows.values()) {
+    mainSend(browserWindow, name, params)
+  }
+}
+
+export const openDevTools = (apiId?: string) => {
+  const browserWindow = apiId == null ? [...windows.values()][0] : windows.get(apiId)
   if (!browserWindow) return
   handleOpenDevTools(browserWindow.webContents)
 }

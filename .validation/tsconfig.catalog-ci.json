@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.playback.json",
+  "include": [
+    "../src/renderer/core/catalog/sdk.ts",
+    "../src/common/types/**/*.d.ts",
+    "../src/renderer/types/**/*.d.ts"
+  ]
+}

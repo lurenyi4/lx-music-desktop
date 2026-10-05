@@ -1,6 +1,11 @@
 <template>
   <div :class="$style.controlBtn">
     <!-- <common-volume-bar /> -->
+    <button :class="[$style.titleBtn, { [$style.radioOn]: appSetting['recommend.radio'] && !playInfo.isSelectionQueue }]" :disabled="(!appSetting['recommend.radio'] || playInfo.isSelectionQueue) && !musicInfo.id" :aria-label="appSetting['recommend.radio'] && !playInfo.isSelectionQueue ? $t('explore__radio_stop') : $t('explore__radio_start')" @click="handleToggleRadio">
+      <svg version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" height="100%" viewBox="0 0 512 512" space="preserve">
+        <use xlink:href="#icon-explore" />
+      </svg>
+    </button>
     <button :class="$style.titleBtn" :aria-label="$t('player__add_music_to')" @click="addMusicTo">
       <svg version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" width="90%" viewBox="0 0 512 512" space="preserve">
         <use xlink:href="#icon-add-2" />
@@ -21,13 +26,16 @@
 </template>
 
 <script>
+import { startSession } from '@renderer/core/recommend/session'
 import { ref } from '@common/utils/vueTools'
 import useToggleDesktopLyric from '@renderer/utils/compositions/useToggleDesktopLyric'
-import { musicInfo, playMusicInfo } from '@renderer/store/player/state'
-import { appSetting } from '@renderer/store/setting'
+import { musicInfo, playInfo, playMusicInfo } from '@renderer/store/player/state'
+import { appSetting, updateSetting } from '@renderer/store/setting'
+import { useRouter } from '@common/utils/vueRouter'
 
 export default {
   setup() {
+    const router = useRouter()
     const isShowAddMusicTo = ref(false)
     const {
       toggleDesktopLyricBtnTitle,
@@ -38,6 +46,24 @@ export default {
       if (!musicInfo.id) return
       isShowAddMusicTo.value = true
     }
+    // 探索电台开/关（D10 播放栏常驻开关）：只写设置项，
+    // 开台/收台由 session 层统一响应 recommend.radio 变化完成（双入口同源，见 initRecommendRadio）
+    const handleToggleRadio = () => {
+      if (playInfo.isSelectionQueue && appSetting['recommend.radio']) {
+        if (!musicInfo.id) return
+        void router.push('/explore')
+        void startSession().catch(console.warn)
+        return
+      }
+      if (appSetting['recommend.radio']) {
+        updateSetting({ 'recommend.radio': false })
+        return
+      }
+      if (!musicInfo.id) return
+      // 先跳转页面再开台（初始计划较慢，页面负责展示进度/错误）
+      void router.push('/explore')
+      updateSetting({ 'recommend.radio': true })
+    }
     return {
       appSetting,
       isShowAddMusicTo,
@@ -45,7 +71,10 @@ export default {
       toggleDesktopLyric,
       toggleLockDesktopLyric,
       addMusicTo,
+      musicInfo,
       playMusicInfo,
+      playInfo,
+      handleToggleRadio,
     }
   },
 }
@@ -95,6 +124,16 @@ export default {
   &:active {
     opacity: 1;
   }
+  &[disabled] {
+    opacity: .3;
+    cursor: default;
+  }
+}
+
+// 电台开启状态样式：复用主题主色标示“正在跟随切歌”（不换图标，最小改动）
+.radioOn {
+  color: var(--color-primary);
+  opacity: 1;
 }
 
 

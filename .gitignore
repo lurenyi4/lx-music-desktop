@@ -71,3 +71,6 @@ publish/assets
 publish/utils/githubToken.js
 
 src/**/*-internal.js
+
+# Generated isolated component-verification bundle
+.validation/catalog-queue-ui/

@@ -23,9 +23,18 @@ declare namespace LX {
       albumName: string // 歌曲专辑名称
       picUrl?: string | null // 歌曲图片链接
       toggleMusicInfo?: MusicInfoOnline | null
+      /** Explicit user choice; automatic fallback must never modify it. */
+      manualVersionPinned?: boolean
+    }
+
+    /** Provider-scoped artist identity. For tx, id is singer mid, not numeric singer id. */
+    interface CatalogArtist {
+      id: string | number
+      name: string
     }
 
     interface MusicInfoMeta_online extends MusicInfoMetaBase {
+      artists?: CatalogArtist[]
       qualitys: MusicQualityType[]
       _qualitys: _MusicQualityType
       albumId?: string | number // 歌曲专辑ID
@@ -113,6 +122,8 @@ declare namespace LX {
     interface MusicUrlInfo {
       id: string
       url: string
+      /** 原条目缓存了换源 URL 时，保留实际取流的提供方条目。 */
+      musicInfo?: MusicInfoOnline
     }
 
     interface MusicInfoOtherSourceSave {

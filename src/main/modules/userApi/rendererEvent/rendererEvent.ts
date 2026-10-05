@@ -1,15 +1,37 @@
 import { mainOn } from '@common/mainIpc'
 
 import USER_API_RENDERER_EVENT_NAME from './name'
-import { createWindow, getProxy, openDevTools, sendEvent } from '../main'
+import { createWindow, closeWindow, getApiIdByWebContentsId, getProxy, hasWindow, openDevTools, sendEventToApi } from '../main'
 import { getUserApis } from '../utils'
 import { sendShowUpdateAlert, sendStatusChange } from '@main/modules/winMain'
 
-let userApi: LX.UserApi.UserApiInfo
-let apiStatus: LX.UserApi.UserApiStatus = { status: true }
-const requestQueue = new Map()
+/** 已加载音源信息：apiId -> UserApiInfo（多活音源，主源与备源同时在场） */
+const loadedApis = new Map<string, LX.UserApi.UserApiInfo>()
+/** 各音源初始化状态：apiId -> UserApiStatus */
+const apiStatusMap = new Map<string, LX.UserApi.UserApiStatus>()
+/** 主源 api id（搜索、歌词、封面等非取流调用只走主源） */
+let primaryApiId: string | null = null
+/** 备源 api id 列表（有序，播放取流失败时按序轮换） */
+let backupApiIds: string[] = []
+const requestQueue = new Map<string, {
+  apiId: string
+  resolve: (value: any) => void
+  reject: (error: Error) => void
+}>()
 const timeouts = new Map<string, NodeJS.Timeout>()
+const clearApiStatus = (apiInfo: LX.UserApi.UserApiInfo) => {
+  apiStatusMap.delete(apiInfo.id)
+  sendStatusChange({ status: false, apiInfo })
+}
+// 主源、备源及关窗操作串行执行，避免重开窗口与上一轮销毁交错。
+let windowUpdate: Promise<void> = Promise.resolve()
+const updateWindows = async(action: () => Promise<void>) => {
+  const next = windowUpdate.then(action)
+  windowUpdate = next.catch(() => {})
+  return next
+}
 interface InitParams {
+  event: Electron.IpcMainEvent
   params: {
     status: boolean
     message: string
@@ -17,6 +39,7 @@ interface InitParams {
   }
 }
 interface ResponseParams {
+  event: Electron.IpcMainEvent
   params: {
     status: boolean
     message: string
@@ -27,6 +50,7 @@ interface ResponseParams {
   }
 }
 interface UpdateInfoParams {
+  event: Electron.IpcMainEvent
   params: {
     data: {
       log: string
@@ -36,16 +60,15 @@ interface UpdateInfoParams {
 }
 
 export const init = () => {
-  const handleInit = ({ params: { status, message, data: apiInfo } }: InitParams) => {
+  const handleInit = ({ event, params: { status, message, data: apiInfo } }: InitParams) => {
     // console.log('inited')
-    // if (!status) {
-    //   console.log('init failed:', message)
-    //   global.lx_event.userApi.status(status = { status: true, apiInfo: { ...userApi, sources: apiInfo.sources } })
-    //   return
-    // }
-    apiStatus = status
-      ? { status: true, apiInfo: { ...userApi, sources: apiInfo.sources } }
-      : { status: false, apiInfo: userApi, message }
+    const apiId = getApiIdByWebContentsId(event.sender.id)
+    const loadedApi = apiId == null ? undefined : loadedApis.get(apiId)
+    if (!loadedApi) return
+    const apiStatus: LX.UserApi.UserApiStatus = status
+      ? { status: true, apiInfo: { ...loadedApi, sources: apiInfo.sources } }
+      : { status: false, apiInfo: loadedApi, message }
+    apiStatusMap.set(loadedApi.id, apiStatus)
     sendStatusChange(apiStatus)
   }
   const handleResponse = ({ params: { status, data: { requestKey, result }, message } }: ResponseParams) => {
@@ -54,25 +77,30 @@ export const init = () => {
     requestQueue.delete(requestKey)
     clearRequestTimeout(requestKey)
     if (status) {
-      request[0](result)
+      request.resolve(result)
     } else {
-      request[1](new Error(message))
+      request.reject(new Error(message))
     }
   }
-  const handleOpenDevTools = () => {
-    openDevTools()
+  const handleOpenDevTools = ({ event }: LX.IpcMainEvent) => {
+    const apiId = getApiIdByWebContentsId(event.sender.id)
+    openDevTools(apiId ?? undefined)
   }
-  const handleShowUpdateAlert = ({ params: { data } }: UpdateInfoParams) => {
-    if (!userApi.allowShowUpdateAlert) return
+  const handleShowUpdateAlert = ({ event, params: { data } }: UpdateInfoParams) => {
+    const apiId = getApiIdByWebContentsId(event.sender.id)
+    const targetApi = apiId == null ? undefined : loadedApis.get(apiId)
+    if (!targetApi?.allowShowUpdateAlert) return
     sendShowUpdateAlert({
-      name: userApi.name,
-      description: userApi.description,
+      name: targetApi.name,
+      description: targetApi.description,
       log: data.log,
       updateUrl: data.updateUrl,
     })
   }
-  const handleGetProxy = () => {
-    sendEvent(USER_API_RENDERER_EVENT_NAME.proxyUpdate, getProxy())
+  const handleGetProxy = ({ event }: LX.IpcMainEvent) => {
+    const apiId = getApiIdByWebContentsId(event.sender.id)
+    if (apiId == null) return
+    sendEventToApi(apiId, USER_API_RENDERER_EVENT_NAME.proxyUpdate, getProxy())
   }
   mainOn(USER_API_RENDERER_EVENT_NAME.init, handleInit)
   mainOn(USER_API_RENDERER_EVENT_NAME.response, handleResponse)
@@ -90,40 +118,104 @@ export const clearRequestTimeout = (requestKey: string) => {
 }
 
 export const loadApi = async(apiId: string) => {
-  if (!apiId) {
-    apiStatus = { status: false, message: 'api id is null' }
-    sendStatusChange(apiStatus)
-    return
-  }
   const targetApi = getUserApis().find(api => api.id == apiId)
   if (!targetApi) throw new Error('api not found')
-  userApi = targetApi
-  console.log('load api', userApi.name)
-  await createWindow(userApi)
-  // if (!userApi) return global.lx_event.userApi.status(status = { status: false, message: 'api script is not found' })
-  // if (!global.modules.userApiWindow) {
-  //   global.lx_event.userApi.status(status = { status: false, message: 'user api runtime is not defined' })
-  //   throw new Error('user api window is not defined')
-  // }
+  loadedApis.set(apiId, targetApi)
+  console.log('load api', targetApi.name)
+  if (hasWindow(apiId)) return
+  // 重建丢失的窗口时同步清除渲染层旧能力；首次装载仍等待真正的 init 结果。
+  if (apiStatusMap.has(apiId)) clearApiStatus(targetApi)
+  try {
+    await createWindow(targetApi)
+  } catch (err) {
+    await unloadApi(apiId)
+    throw err
+  }
+}
 
-  // // const path = require('path')
-  // // // eslint-disable-next-line no-undef
-  // // userApi.script = require('fs').readFileSync(join(process.env.NODE_ENV !== 'production' ? __userApi : __dirname, 'renderer/test-api.js')).toString()
-  // console.log('load api', userApi.name)
-  // mainSend(global.modules.userApiWindow, USER_API_RENDERER_EVENT_NAME.init, { userApi })
+export const unloadApi = async(apiId: string) => {
+  const apiInfo = loadedApis.get(apiId)
+  if (!apiInfo) return
+  loadedApis.delete(apiId)
+  clearApiStatus(apiInfo)
+  for (const [key, request] of requestQueue) {
+    if (request.apiId === apiId) cancelRequest(key)
+  }
+  await closeWindow(apiId)
+}
+
+/** 按需增删音源窗口：需要保留的 = 主源 ∪ 备源，其余卸载；主源加载失败向上抛（渲染层有回退逻辑），备源尽力而为 */
+const reconcileWindows = async() => {
+  if (primaryApiId && !hasWindow(primaryApiId)) await loadApi(primaryApiId)
+  for (const apiId of backupApiIds) {
+    if (apiId && apiId != primaryApiId && !hasWindow(apiId)) await loadApi(apiId).catch(err => { console.log(err) })
+  }
+  const keepIds = new Set([primaryApiId, ...backupApiIds].filter((id): id is string => !!id))
+  for (const apiId of [...loadedApis.keys()]) {
+    if (!keepIds.has(apiId)) await unloadApi(apiId)
+  }
+}
+
+export const setApi = async(apiId: string) => updateWindows(async() => {
+  // temp/内置源由渲染端处理，主进程只装载自定义脚本。
+  const isUserApi = /^user_api/.test(apiId)
+  if (isUserApi && !getUserApis().some(api => api.id == apiId)) throw new Error('api not found')
+  primaryApiId = isUserApi ? apiId : null
+  await reconcileWindows()
+  if (!primaryApiId) {
+    sendStatusChange({ status: false, message: 'api id is null' })
+    return
+  }
+  // 主源切换到已初始化的窗口时不会有新的 init 事件，补发缓存的状态让渲染层更新 qualityList
+  const cachedStatus = apiStatusMap.get(primaryApiId)
+  if (cachedStatus) sendStatusChange(cachedStatus)
+})
+
+export const setBackups = async(apiIds: string[]) => updateWindows(async() => {
+  backupApiIds = [...new Set(apiIds)]
+  await reconcileWindows()
+  // 渲染窗口重载后也需要收到已有备源的初始化信息。
+  for (const id of backupApiIds) {
+    const status = apiStatusMap.get(id)
+    if (status) sendStatusChange(status)
+  }
+})
+
+export const unloadAllApis = async() => updateWindows(async() => {
+  primaryApiId = null
+  backupApiIds = []
+  for (const apiInfo of loadedApis.values()) clearApiStatus(apiInfo)
+  loadedApis.clear()
+  apiStatusMap.clear()
+  for (const key of requestQueue.keys()) cancelRequest(key)
+  await closeWindow()
+})
+
+export const getStatus = (): LX.UserApi.UserApiStatus => primaryApiId ? (apiStatusMap.get(primaryApiId) ?? { status: false }) : { status: false }
+
+export const setAllowShowUpdateAlert = (id: string, enable: boolean) => {
+  const targetApi = loadedApis.get(id)
+  if (!targetApi) return
+  targetApi.allowShowUpdateAlert = enable
 }
 
 export const cancelRequest = (requestKey: string) => {
-  if (!requestQueue.has(requestKey)) return
   const request = requestQueue.get(requestKey)
-  request[1](new Error('Cancel request'))
+  if (!request) return
+  request.reject(new Error('Cancel request'))
   requestQueue.delete(requestKey)
   clearRequestTimeout(requestKey)
 }
 
 export const request = async({ requestKey, data }: LX.UserApi.UserApiRequestParams): Promise<any> => await new Promise((resolve, reject) => {
-  if (!userApi) {
+  const apiId: string | null | undefined = data?.apiId ?? primaryApiId
+  if (!apiId || !loadedApis.has(apiId) || !hasWindow(apiId)) {
     reject(new Error('user api is not load'))
+    return
+  }
+  if (!apiStatusMap.get(apiId)?.status) {
+    reject(new Error('user api is not initialized'))
+    return
   }
 
   // const requestKey = `request__${Math.random().toString().substring(2)}`
@@ -138,17 +230,11 @@ export const request = async({ requestKey, data }: LX.UserApi.UserApiRequestPara
     cancelRequest(requestKey)
   }, 20000))
 
-  requestQueue.set(requestKey, [resolve, reject, data])
-  sendRequest({ requestKey, data })
+  // 保存实际路由的音源，兼容 data 未显式指定 apiId 的主源请求。
+  requestQueue.set(requestKey, { apiId, resolve, reject })
+  sendRequest({ requestKey, data, apiId })
 })
 
-export const getStatus = (): LX.UserApi.UserApiStatus => apiStatus
-
-export const setAllowShowUpdateAlert = (id: string, enable: boolean) => {
-  if (!userApi || userApi.id != id) return
-  userApi.allowShowUpdateAlert = enable
-}
-
-export const sendRequest = (reqData: { requestKey: string, data: any }) => {
-  sendEvent(USER_API_RENDERER_EVENT_NAME.request, reqData)
+export const sendRequest = (reqData: { requestKey: string, data: any, apiId: string }) => {
+  sendEventToApi(reqData.apiId, USER_API_RENDERER_EVENT_NAME.request, { requestKey: reqData.requestKey, data: reqData.data })
 }

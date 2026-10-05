@@ -1,25 +1,27 @@
 import { getDownloadFilePath } from '@renderer/utils/music'
 
 import {
-  getMusicUrl as getOnlineMusicUrl,
+  getVersionMusicUrl as getOnlineMusicUrl,
   getPicUrl as getOnlinePicUrl,
   getLyricInfo as getOnlineLyricInfo,
 } from './online'
 import { buildLyricInfo, getCachedLyricInfo } from './utils'
 import { buildSavePath } from '@renderer/store/download/utils'
 
-export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = true, onToggleSource = () => {} }: {
+export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = true, onResolvedMusicInfo, onToggleSource = () => {}, onToggleApiSource }: {
   musicInfo: LX.Download.ListItem
   isRefresh: boolean
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
+  onToggleApiSource?: () => void
   allowToggleSource?: boolean
+  onResolvedMusicInfo?: (musicInfo: LX.Music.MusicInfoOnline) => void
 }): Promise<string> => {
   if (!isRefresh) {
     const path = await getDownloadFilePath(musicInfo, buildSavePath(musicInfo))
     if (path) return path
   }
 
-  return getOnlineMusicUrl({ musicInfo: musicInfo.metadata.musicInfo, isRefresh, onToggleSource, allowToggleSource })
+  return getOnlineMusicUrl({ musicInfo: musicInfo.metadata.musicInfo, isRefresh, onToggleSource, onToggleApiSource, allowToggleSource, onResolvedMusicInfo })
 }
 
 export const getPicUrl = async({ musicInfo, isRefresh, listId, onToggleSource = () => {} }: {
