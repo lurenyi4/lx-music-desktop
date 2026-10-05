@@ -23,13 +23,16 @@ export default () => {
     noItemLabel: '',
   })
 
+  let searchVersion = 0
   const search = (text: string, source: SearchSource, page: number) => {
+    const version = ++searchVersion
     listInfo.value = listInfos[source] as ListInfo
-    if (text.length) void addHistoryWord(text)
-    void searchMusic(text, page, source).then((list: LX.Music.MusicInfo[]) => {
+    if (text.length) void addHistoryWord(text).catch(error => { console.log(error) })
+    return searchMusic(text, page, source).then((list: LX.Music.MusicInfo[]) => {
+      if (version !== searchVersion) return
       if (list.length) {
         setTimeout(() => {
-          if (listRef.value) listRef.value.scrollToTop()
+          if (version === searchVersion && listRef.value) listRef.value.scrollToTop()
         })
       }
     })

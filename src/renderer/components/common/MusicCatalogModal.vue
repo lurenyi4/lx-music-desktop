@@ -8,7 +8,7 @@
       </div>
       <p v-if="catalogState.error" :class="$style.status" role="alert">{{ catalogState.error }} <base-btn :disabled="catalogState.loading" @click="catalogActions.retry">{{ $t('retry') }}</base-btn></p>
       <p v-if="catalogState.loading" :class="$style.status" role="status">{{ $t('catalog__loading') }}</p>
-      <div v-if="catalogState.target" :class="$style.songs">
+      <div v-if="catalogState.show && catalogState.target" :class="$style.songs">
         <material-online-list
           :key="`${catalogState.target?.source}:${catalogState.target?.kind}:${catalogState.target?.id}`"
           :list="catalogState.list" :page="1" :limit="Math.max(1, catalogState.list.length)" :total="catalogState.list.length"

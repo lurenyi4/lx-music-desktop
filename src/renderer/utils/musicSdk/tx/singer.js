@@ -66,7 +66,7 @@ export const filterMusicInfoItem = item => {
  * @param {*} options
  * @param {*} retryNum
  */
-const createMusicuFetch = async(data, options, retryNum = 0) => {
+export const createMusicuFetch = async(data, options, retryNum = 0) => {
   if (retryNum > 2) throw new Error('try max num')
 
   let result

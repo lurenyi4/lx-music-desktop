@@ -35,6 +35,7 @@ vi.mock('@renderer/store/player/state', () => ({
 }))
 vi.mock('@renderer/store/player/action', () => ({
   getList: vi.fn(),
+  getPlaybackList: (...args: any[]) => (getList as any)(...args),
   addTempPlayList: vi.fn((items: LX.Player.PlayMusicInfo[]) => { tempPlayList.push(...items.map(item => ({ ...item, isTempPlay: true }))) }),
   clearPlayedList: vi.fn(),
   clearTempPlayeList: vi.fn(() => { tempPlayList.splice(0) }),

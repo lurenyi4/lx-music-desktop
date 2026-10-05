@@ -46,7 +46,7 @@ describe('ID-based catalog adapter', () => {
     input.meta.artists = [{ id: 0, name: 'Unknown' }]
     const adapter = createCatalogAdapter({ wy: { artist: vi.fn(), detail: async() => null } })
     await expect(adapter.resolve('artist', input)).rejects.toMatchObject({ code: 'metadata' })
-    await expect(adapter.resolve('album', input)).rejects.toMatchObject({ code: 'unsupported' })
+    await expect(adapter.resolve('album', input)).rejects.toMatchObject({ code: 'not-integrated' })
   })
   it('resolves an album by its provider ID even for a compilation', async() => {
     const input = { ...music(), source: 'kw' as const }
@@ -89,7 +89,7 @@ describe('catalog error localization', () => {
   it('uses the current locale for provider and metadata errors', async() => {
     window.i18n.setLanguage('en-us')
     const adapter = createCatalogAdapter({ wy: { artist: vi.fn() } })
-    await expect(adapter.resolve('album', music())).rejects.toMatchObject({ message: 'Provider wy does not support album catalogs' })
+    await expect(adapter.resolve('album', music())).rejects.toMatchObject({ message: 'Album catalog integration is not implemented for provider wy' })
     const input = music()
     delete input.meta.artists
     await expect(adapter.resolve('artist', input)).rejects.toMatchObject({ message: 'Song details do not include an exact artist ID, so the full catalog cannot be opened' })

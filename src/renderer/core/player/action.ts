@@ -2,6 +2,7 @@ import { isEmpty, setPause, setPlay, setResource, setStop } from '@renderer/plug
 import { isPlay, playedList, playInfo, playMusicInfo, tempPlayList, musicInfo as _musicInfo } from '@renderer/store/player/state'
 import {
   getList,
+  getPlaybackList,
   clearPlayedList,
   clearTempPlayeList,
   addTempPlayList,
@@ -13,6 +14,7 @@ import {
   setPlayListId,
   removePlayedList,
 } from '@renderer/store/player/action'
+import { queueSession, updateQueueSessionMusic } from '@renderer/store/player/queueSession'
 import { appSetting } from '@renderer/store/setting'
 import { getMusicUrl, getPicPath, getLyricInfo } from '../music/index'
 import { writebackToggleMusicInfo } from '../music/toggleWriteback'
@@ -26,6 +28,7 @@ import { addDislikeInfo } from '@renderer/core/dislikeList'
 
 let gettingUrlId = ''
 let musicUrlRequestId = 0
+let playbackEpoch = 0
 const createGettingUrlId = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem) => {
   const tInfo = 'progress' in musicInfo ? musicInfo.metadata.musicInfo.meta.toggleMusicInfo : musicInfo.meta.toggleMusicInfo
   return `${musicInfo.id}_${tInfo?.id ?? ''}`
@@ -178,6 +181,7 @@ const handleRestorePlay = async(restorePlayInfo: LX.Player.SavedPlayInfo) => {
 
 // 处理音乐播放
 const handlePlay = () => {
+  playbackEpoch++
   window.lx.isPlayedStop &&= false
 
   resetRandomNextMusicInfo()
@@ -260,23 +264,63 @@ export const playList = (listId: string, index: number) => {
 
 const handleToggleStop = () => {
   stop()
+  const epoch = playbackEpoch
   setTimeout(() => {
-    setPlayMusicInfo(null, null)
+    if (epoch === playbackEpoch) setPlayMusicInfo(null, null)
   })
 }
 
+let traversalEpoch = 0
+export const capturePlaybackOwner = () => {
+  const playback = playbackEpoch
+  const music = playMusicInfo.musicInfo
+  return () => playback === playbackEpoch && music === playMusicInfo.musicInfo
+}
+export const capturePlaybackContext = () => {
+  const ownsPlayback = capturePlaybackOwner()
+  const epoch = traversalEpoch
+  const revision = queueSession.revision
+  const listId = playInfo.playerListId
+  const index = playInfo.playerPlayIndex
+  const mode = appSetting['player.togglePlayMethod']
+  return () => ownsPlayback() && epoch === traversalEpoch && revision === queueSession.revision &&
+    listId === playInfo.playerListId && index === playInfo.playerPlayIndex && mode === appSetting['player.togglePlayMethod']
+}
+let randomNextRequest: { valid: () => boolean, promise: Promise<LX.Player.PlayMusicInfo | null> } | null = null
 const randomNextMusicInfo = {
   info: null as LX.Player.PlayMusicInfo | null,
+  valid: null as (() => boolean) | null,
   // index: -1,
 }
+export const getCachedRandomNextMusicInfo = () => appSetting['player.togglePlayMethod'] === 'random' && randomNextMusicInfo.valid?.() ? randomNextMusicInfo.info : null
+
 export const resetRandomNextMusicInfo = () => {
-  if (randomNextMusicInfo.info) {
-    randomNextMusicInfo.info = null
-    // randomNextMusicInfo.index = -1
-  }
+  traversalEpoch++
+  randomNextMusicInfo.info = null
+  randomNextMusicInfo.valid = null
+  randomNextRequest = null
 }
 
-export const getNextPlayMusicInfo = async(): Promise<LX.Player.PlayMusicInfo | null> => {
+export const getNextPlayMusicInfo = async(options: { advanceFromRemovedSource?: boolean } = {}): Promise<LX.Player.PlayMusicInfo | null> => {
+  if (tempPlayList.length) return Promise.resolve(tempPlayList[0])
+  const random = appSetting['player.togglePlayMethod'] === 'random'
+  if (random && randomNextMusicInfo.info && randomNextMusicInfo.valid?.()) return Promise.resolve(randomNextMusicInfo.info)
+  if (random && randomNextRequest?.valid()) return randomNextRequest.promise
+  const valid = capturePlaybackContext()
+  const promise = resolveNextPlayMusicInfo(valid, options.advanceFromRemovedSource === true)
+  if (random) {
+    const request = { valid, promise }
+    randomNextRequest = request
+    void promise.then(() => {
+      if (randomNextRequest === request) randomNextRequest = null
+    }, () => {
+      if (randomNextRequest === request) randomNextRequest = null
+    })
+  }
+  return promise
+}
+
+const resolveNextPlayMusicInfo = async(valid: () => boolean, advanceFromRemovedSource: boolean): Promise<LX.Player.PlayMusicInfo | null> => {
   if (tempPlayList.length) { // 如果稍后播放列表存在歌曲则直接播放改列表的歌曲
     const playMusicInfo = tempPlayList[0]
     return playMusicInfo
@@ -284,12 +328,11 @@ export const getNextPlayMusicInfo = async(): Promise<LX.Player.PlayMusicInfo | n
 
   if (playMusicInfo.musicInfo == null) return null
 
-  if (appSetting['player.togglePlayMethod'] === 'random' && randomNextMusicInfo.info) return randomNextMusicInfo.info
 
   // console.log(playInfo.playerListId)
   const currentListId = playInfo.playerListId
   if (!currentListId) return null
-  const currentList = getList(currentListId)
+  const currentList = getPlaybackList(currentListId)
 
   if (appSetting['player.togglePlayMethod'] === 'random' && playedList.length) { // 移除已播放列表内不存在原列表的歌曲
     let currentId: string
@@ -314,7 +357,7 @@ export const getNextPlayMusicInfo = async(): Promise<LX.Player.PlayMusicInfo | n
     if (index < playedList.length) return playedList[index]
   }
   // const isCheckFile = findNum > 2 // 针对下载列表，如果超过两次都碰到无效歌曲，则过滤整个列表内的无效歌曲
-  let { filteredList, playerIndex } = await filterList({ // 过滤已播放歌曲
+  let { filteredList, playerIndex, shouldResetPlayedList } = await filterList({ // 过滤已播放歌曲
     listId: currentListId,
     list: currentList,
     playedList: appSetting['player.togglePlayMethod'] === 'random' ? playedList : [],
@@ -322,6 +365,9 @@ export const getNextPlayMusicInfo = async(): Promise<LX.Player.PlayMusicInfo | n
     isNext: true,
   })
 
+  if (!valid()) return null
+  if (tempPlayList.length) return tempPlayList[0]
+  if (shouldResetPlayedList) clearPlayedList()
   if (!filteredList.length) return null
   // let currentIndex: number = filteredList.indexOf(currentList[playInfo.playerPlayIndex])
   let nextIndex = playerIndex
@@ -338,27 +384,30 @@ export const getNextPlayMusicInfo = async(): Promise<LX.Player.PlayMusicInfo | n
       nextIndex = playerIndex === filteredList.length - 1 ? -1 : playerIndex + 1
       break
     case 'singleLoop':
-      nextIndex = Math.max(0, playerIndex)
+      nextIndex = advanceFromRemovedSource ? playerIndex + 1 : Math.max(0, playerIndex)
       break
     default:
       return null
   }
   if (nextIndex < 0) return null
 
+  const musicInfo = filteredList[nextIndex]
+  if (!musicInfo) return null
   const nextPlayMusicInfo = {
-    musicInfo: filteredList[nextIndex],
+    musicInfo,
     listId: currentListId,
     isTempPlay: false,
   }
 
   if (togglePlayMethod == 'random') {
     randomNextMusicInfo.info = nextPlayMusicInfo
+    randomNextMusicInfo.valid = valid
     // randomNextMusicInfo.index = nextIndex
   }
   return nextPlayMusicInfo
 }
 
-const handlePlayNext = (playMusicInfo: LX.Player.PlayMusicInfo, reason: LX.Player.MusicChangeReason = 'user') => {
+export const playQueueMusic = (playMusicInfo: LX.Player.PlayMusicInfo, reason: LX.Player.MusicChangeReason = 'user') => {
   // pause()
   setPlayMusicInfo(playMusicInfo.listId, playMusicInfo.musicInfo, playMusicInfo.isTempPlay, playMusicInfo.alternativeMusicInfos, reason)
   handlePlay()
@@ -378,6 +427,17 @@ export const playMusicInfoNow = (musicInfo: LX.Music.MusicInfo | LX.Download.Lis
 }
 /** Restart a manually selected version without discarding the user's pending queue. */
 export const restartSelectedVersion = (listId: string, musicInfo: LX.Music.MusicInfo, preview?: { musicInfo: LX.Music.MusicInfo, isTempPlay: boolean }) => {
+  updateQueueSessionMusic(listId, musicInfo)
+  let updatedOccurrence = false
+  for (const entry of [...tempPlayList, ...playedList]) {
+    if (entry.listId !== listId || entry.musicInfo.id !== musicInfo.id) continue
+    entry.musicInfo = musicInfo
+    updatedOccurrence = true
+  }
+  if (updatedOccurrence || playInfo.playerListId === listId) {
+    queueSession.revision++
+    resetRandomNextMusicInfo()
+  }
   const isOriginal = playMusicInfo.listId === listId && playMusicInfo.musicInfo?.id === musicInfo.id
   const isPreview = preview && playMusicInfo.musicInfo === preview.musicInfo && playMusicInfo.isTempPlay
   if (!isOriginal && !isPreview) return
@@ -403,175 +463,88 @@ export const playMusicSelection = (list: Array<LX.Music.MusicInfo | LX.Download.
  * @returns
  */
 export const playNext = async(isAutoToggle = false, reason: LX.Player.MusicChangeReason = isAutoToggle ? 'ended' : 'user'): Promise<void> => {
-  console.log('skip next', isAutoToggle)
-  if (tempPlayList.length) { // 如果稍后播放列表存在歌曲则直接播放改列表的歌曲
-    const playMusicInfo = tempPlayList[0]
-    removeTempPlayList(0)
-    handlePlayNext(playMusicInfo, reason)
-    console.log('play temp list')
-    return
-  }
-
-  if (playMusicInfo.musicInfo == null) {
-    handleToggleStop()
-    console.log('musicInfo empty')
-    return
-  }
-
-  // console.log(playInfo.playerListId)
-  const currentListId = playInfo.playerListId
-  if (!currentListId) {
-    handleToggleStop()
-    console.log('currentListId empty')
-    return
-  }
-  const currentList = getList(currentListId)
-
-  if (appSetting['player.togglePlayMethod'] === 'random' && playedList.length) { // 移除已播放列表内不存在原列表的歌曲
-    let currentId: string
-    if (playMusicInfo.isTempPlay) {
-      const musicInfo = currentList[playInfo.playerPlayIndex]
-      if (musicInfo) currentId = musicInfo.id
-    } else {
-      currentId = playMusicInfo.musicInfo.id
+  const ownsPlayback = capturePlaybackOwner()
+  while (ownsPlayback()) {
+    console.log('skip next', isAutoToggle)
+    if (tempPlayList.length) { // 如果稍后播放列表存在歌曲则直接播放改列表的歌曲
+      const playMusicInfo = tempPlayList[0]
+      removeTempPlayList(0)
+      playQueueMusic(playMusicInfo, reason)
+      console.log('play temp list')
+      return
     }
-    // 从已播放列表移除播放列表已删除的歌曲
-    let index
-    for (index = playedList.findIndex(m => m.musicInfo.id === currentId) + 1; index < playedList.length; index++) {
-      const playMusicInfo = playedList[index]
-      const currentId = playMusicInfo.musicInfo.id
-      if (playMusicInfo.listId == currentListId && !currentList.some(m => m.id === currentId)) {
-        removePlayedList(index)
-        continue
+
+    if (playMusicInfo.musicInfo == null) {
+      handleToggleStop()
+      console.log('musicInfo empty')
+      return
+    }
+
+    // console.log(playInfo.playerListId)
+    const currentListId = playInfo.playerListId
+    if (!currentListId) {
+      handleToggleStop()
+      console.log('currentListId empty')
+      return
+    }
+    const currentList = getPlaybackList(currentListId)
+
+    if (appSetting['player.togglePlayMethod'] === 'random' && playedList.length) { // 移除已播放列表内不存在原列表的歌曲
+      let currentId: string
+      if (playMusicInfo.isTempPlay) {
+        const musicInfo = currentList[playInfo.playerPlayIndex]
+        if (musicInfo) currentId = musicInfo.id
+      } else {
+        currentId = playMusicInfo.musicInfo.id
       }
-      break
-    }
-
-    if (index < playedList.length) {
-      handlePlayNext(playedList[index], reason)
-      console.log('play played list')
-      return
-    }
-  }
-  if (appSetting['player.togglePlayMethod'] === 'random' && randomNextMusicInfo.info) {
-    handlePlayNext(randomNextMusicInfo.info, reason)
-    return
-  }
-  // const isCheckFile = findNum > 2 // 针对下载列表，如果超过两次都碰到无效歌曲，则过滤整个列表内的无效歌曲
-  let { filteredList, playerIndex } = await filterList({ // 过滤已播放歌曲
-    listId: currentListId,
-    list: currentList,
-    playedList: appSetting['player.togglePlayMethod'] === 'random' ? playedList : [],
-    playerMusicInfo: currentList[playInfo.playerPlayIndex],
-    isNext: true,
-  })
-
-  if (!filteredList.length) {
-    handleToggleStop()
-    console.log('filtered list empty')
-    return
-  }
-  // let currentIndex: number = filteredList.indexOf(currentList[playInfo.playerPlayIndex])
-  let nextIndex = playerIndex
-
-  let togglePlayMethod = appSetting['player.togglePlayMethod']
-  if (!isAutoToggle) {
-    switch (togglePlayMethod) {
-      case 'list':
-      case 'singleLoop':
-      case 'none':
-        togglePlayMethod = 'listLoop'
-    }
-  }
-  switch (togglePlayMethod) {
-    case 'listLoop':
-      nextIndex = playerIndex === filteredList.length - 1 ? 0 : playerIndex + 1
-      break
-    case 'random':
-      nextIndex = getRandom(0, filteredList.length)
-      break
-    case 'list':
-      nextIndex = playerIndex === filteredList.length - 1 ? -1 : playerIndex + 1
-      break
-    case 'singleLoop':
-      nextIndex = Math.max(0, playerIndex)
-      break
-    default:
-      nextIndex = -1
-      console.log('stop toggle play', togglePlayMethod, isAutoToggle)
-      return
-  }
-  if (nextIndex < 0) {
-    console.log('next index empty')
-    return
-  }
-
-  handlePlayNext({
-    musicInfo: filteredList[nextIndex],
-    listId: currentListId,
-    isTempPlay: false,
-  }, reason)
-}
-
-/**
- * 上一曲
- */
-export const playPrev = async(isAutoToggle = false): Promise<void> => {
-  if (playMusicInfo.musicInfo == null) {
-    handleToggleStop()
-    return
-  }
-
-  const currentListId = playInfo.playerListId
-  if (!currentListId) {
-    handleToggleStop()
-    return
-  }
-  const currentList = getList(currentListId)
-
-  if (appSetting['player.togglePlayMethod'] === 'random' && playedList.length) {
-    let currentId: string
-    if (playMusicInfo.isTempPlay) {
-      const musicInfo = currentList[playInfo.playerPlayIndex]
-      if (musicInfo) currentId = musicInfo.id
-    } else {
-      currentId = playMusicInfo.musicInfo.id
-    }
-    // 从已播放列表移除播放列表已删除的歌曲
-    let index
-    for (index = playedList.findIndex(m => m.musicInfo.id === currentId) - 1; index > -1; index--) {
-      const playMusicInfo = playedList[index]
-      const currentId = playMusicInfo.musicInfo.id
-      if (playMusicInfo.listId == currentListId && !currentList.some(m => m.id === currentId)) {
-        removePlayedList(index)
-        continue
+      // 从已播放列表移除播放列表已删除的歌曲
+      let index
+      for (index = playedList.findIndex(m => m.musicInfo.id === currentId) + 1; index < playedList.length; index++) {
+        const playMusicInfo = playedList[index]
+        const currentId = playMusicInfo.musicInfo.id
+        if (playMusicInfo.listId == currentListId && !currentList.some(m => m.id === currentId)) {
+          removePlayedList(index)
+          continue
+        }
+        break
       }
-      break
-    }
 
-    if (index > -1) {
-      handlePlayNext(playedList[index])
+      if (index < playedList.length) {
+        playQueueMusic(playedList[index], reason)
+        console.log('play played list')
+        return
+      }
+    }
+    if (appSetting['player.togglePlayMethod'] === 'random') {
+      const valid = capturePlaybackContext()
+      const next = await getNextPlayMusicInfo()
+      if (!valid()) continue
+      if (tempPlayList.length) continue
+      if (next) playQueueMusic(next, reason)
+      else handleToggleStop()
       return
     }
-  }
+    // const isCheckFile = findNum > 2 // 针对下载列表，如果超过两次都碰到无效歌曲，则过滤整个列表内的无效歌曲
+    const valid = capturePlaybackContext()
+    let { filteredList, playerIndex, shouldResetPlayedList } = await filterList({ // 过滤已播放歌曲
+      listId: currentListId,
+      list: currentList,
+      playedList: [],
+      playerMusicInfo: currentList[playInfo.playerPlayIndex],
+      isNext: true,
+    })
 
-  // const isCheckFile = findNum > 2
-  let { filteredList, playerIndex } = await filterList({ // 过滤已播放歌曲
-    listId: currentListId,
-    list: currentList,
-    playedList: appSetting['player.togglePlayMethod'] === 'random' ? playedList : [],
-    playerMusicInfo: currentList[playInfo.playerPlayIndex],
-    isNext: false,
-  })
-  if (!filteredList.length) {
-    handleToggleStop()
-    return
-  }
+    if (!valid()) continue
+    if (tempPlayList.length) continue
+    if (shouldResetPlayedList) clearPlayedList()
+    if (!filteredList.length) {
+      handleToggleStop()
+      console.log('filtered list empty')
+      return
+    }
+    // let currentIndex: number = filteredList.indexOf(currentList[playInfo.playerPlayIndex])
+    let nextIndex = playerIndex
 
-  // let currentIndex = filteredList.indexOf(currentList[playInfo.playerPlayIndex])
-  if (playerIndex == -1 && filteredList.length) playerIndex = 0
-  let nextIndex = playerIndex
-  if (!playMusicInfo.isTempPlay) {
     let togglePlayMethod = appSetting['player.togglePlayMethod']
     if (!isAutoToggle) {
       switch (togglePlayMethod) {
@@ -582,33 +555,138 @@ export const playPrev = async(isAutoToggle = false): Promise<void> => {
       }
     }
     switch (togglePlayMethod) {
-      case 'random':
-        nextIndex = getRandom(0, filteredList.length)
-        break
       case 'listLoop':
+        nextIndex = playerIndex === filteredList.length - 1 ? 0 : playerIndex + 1
+        break
       case 'list':
-        nextIndex = playerIndex === 0 ? filteredList.length - 1 : playerIndex - 1
+        nextIndex = playerIndex === filteredList.length - 1 ? -1 : playerIndex + 1
         break
       case 'singleLoop':
+        nextIndex = Math.max(0, playerIndex)
         break
       default:
         nextIndex = -1
+        console.log('stop toggle play', togglePlayMethod, isAutoToggle)
         return
     }
-    if (nextIndex < 0) return
-  }
+    if (nextIndex < 0) {
+      console.log('next index empty')
+      return
+    }
 
-  handlePlayNext({
-    musicInfo: filteredList[nextIndex],
-    listId: currentListId,
-    isTempPlay: false,
-  })
+    playQueueMusic({
+      musicInfo: filteredList[nextIndex],
+      listId: currentListId,
+      isTempPlay: false,
+    }, reason)
+    return
+  }
+}
+
+/**
+ * 上一曲
+ */
+export const playPrev = async(isAutoToggle = false): Promise<void> => {
+  const ownsPlayback = capturePlaybackOwner()
+  while (ownsPlayback()) {
+    if (playMusicInfo.musicInfo == null) {
+      handleToggleStop()
+      return
+    }
+
+    const currentListId = playInfo.playerListId
+    if (!currentListId) {
+      handleToggleStop()
+      return
+    }
+    const currentList = getPlaybackList(currentListId)
+
+    if (appSetting['player.togglePlayMethod'] === 'random' && playedList.length) {
+      let currentId: string
+      if (playMusicInfo.isTempPlay) {
+        const musicInfo = currentList[playInfo.playerPlayIndex]
+        if (musicInfo) currentId = musicInfo.id
+      } else {
+        currentId = playMusicInfo.musicInfo.id
+      }
+      // 从已播放列表移除播放列表已删除的歌曲
+      let index
+      for (index = playedList.findIndex(m => m.musicInfo.id === currentId) - 1; index > -1; index--) {
+        const playMusicInfo = playedList[index]
+        const currentId = playMusicInfo.musicInfo.id
+        if (playMusicInfo.listId == currentListId && !currentList.some(m => m.id === currentId)) {
+          removePlayedList(index)
+          continue
+        }
+        break
+      }
+
+      if (index > -1) {
+        playQueueMusic(playedList[index])
+        return
+      }
+    }
+
+    // const isCheckFile = findNum > 2
+    const valid = capturePlaybackContext()
+    let { filteredList, playerIndex, shouldResetPlayedList } = await filterList({ // 过滤已播放歌曲
+      listId: currentListId,
+      list: currentList,
+      playedList: appSetting['player.togglePlayMethod'] === 'random' ? playedList : [],
+      playerMusicInfo: currentList[playInfo.playerPlayIndex],
+      isNext: false,
+    })
+    if (!valid()) continue
+    if (shouldResetPlayedList) clearPlayedList()
+    if (!filteredList.length) {
+      handleToggleStop()
+      return
+    }
+
+    // let currentIndex = filteredList.indexOf(currentList[playInfo.playerPlayIndex])
+    if (playerIndex == -1 && filteredList.length) playerIndex = 0
+    let nextIndex = playerIndex
+    if (!playMusicInfo.isTempPlay) {
+      let togglePlayMethod = appSetting['player.togglePlayMethod']
+      if (!isAutoToggle) {
+        switch (togglePlayMethod) {
+          case 'list':
+          case 'singleLoop':
+          case 'none':
+            togglePlayMethod = 'listLoop'
+        }
+      }
+      switch (togglePlayMethod) {
+        case 'random':
+          nextIndex = getRandom(0, filteredList.length)
+          break
+        case 'listLoop':
+        case 'list':
+          nextIndex = playerIndex === 0 ? filteredList.length - 1 : playerIndex - 1
+          break
+        case 'singleLoop':
+          break
+        default:
+          nextIndex = -1
+          return
+      }
+      if (nextIndex < 0) return
+    }
+
+    playQueueMusic({
+      musicInfo: filteredList[nextIndex],
+      listId: currentListId,
+      isTempPlay: false,
+    })
+    return
+  }
 }
 
 /**
  * 恢复播放
  */
 export const play = () => {
+  playbackEpoch++
   window.lx.isPlayedStop &&= false
   if (playMusicInfo.musicInfo == null) return
   if (isEmpty()) {
@@ -629,9 +707,16 @@ export const pause = () => {
  * 停止播放
  */
 export const stop = () => {
+  // Stop owns cancellation even while the current song remains visible awaiting a successor.
+  musicUrlRequestId++
+  gettingUrlId = ''
+  clearLoadTimeout()
+  clearDelayNextTimeout()
+  resetRandomNextMusicInfo()
+  const epoch = ++playbackEpoch
   setStop()
   setTimeout(() => {
-    window.app_event.stop()
+    if (epoch === playbackEpoch) window.app_event.stop()
   })
 }
 

@@ -13,6 +13,7 @@ import {
   playedList,
   tempPlayList,
 } from './state'
+import { getQueueSource, resetQueueSession } from './queueSession'
 import { getListMusicsFromCache } from '@renderer/store/list/action'
 import { downloadList } from '@renderer/store/download/state'
 import { setProgress } from './playProgress'
@@ -70,12 +71,15 @@ export const setShowPlayLrcSelectContentLrc = (val: boolean) => {
 }
 
 export const setPlayListId = (listId: string | null) => {
+  resetQueueSession()
   playInfo.playerListId = listId
 }
 
 export const getList = (listId: string | null): Array<LX.Music.MusicInfo | LX.Download.ListItem> => {
   return listId == LIST_IDS.DOWNLOAD ? downloadList : getListMusicsFromCache(listId)
 }
+
+export const getPlaybackList = (listId: string | null) => getQueueSource(listId, getList(listId))
 
 /**
  * 更新播放位置
@@ -94,7 +98,7 @@ export const getPlayIndex = (listId: string | null, musicInfo: LX.Download.ListI
   playIndex: number
   playerPlayIndex: number
 } => {
-  const playerList = getList(playInfo.playerListId)
+  const playerList = getPlaybackList(playInfo.playerListId)
 
   // if (listIndex < 0) throw new Error('music info not found')
   // playInfo.playIndex = listIndex
@@ -106,14 +110,15 @@ export const getPlayIndex = (listId: string | null, musicInfo: LX.Download.ListI
   }
 
   const list = getList(listId)
-  if (list.length && musicInfo) {
+  if (musicInfo) {
     const currentId = musicInfo.id
     playIndex = list.findIndex(m => m.id == currentId)
     if (!isTempPlay) {
-      if (playIndex < 0) {
+      const queueIndex = playerList.findIndex(m => m.id == currentId)
+      if (queueIndex < 0) {
         playerPlayIndex = playerPlayIndex < 1 ? (list.length - 1) : (playerPlayIndex - 1)
       } else {
-        playerPlayIndex = playIndex
+        playerPlayIndex = queueIndex
       }
     }
   }

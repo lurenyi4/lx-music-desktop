@@ -5,8 +5,8 @@
 Artist and album labels in online results, saved music lists and playback detail open a provider-scoped catalog modal. Labels use the selected version's metadata (`meta.toggleMusicInfo`) without rewriting the saved song identity. The modal uses the existing OnlineList, including play, play-later, add-to-list and download actions.
 
 - Artist catalogs: Kugou (`kg`), QQ Music (`tx`), NetEase (`wy`)
-- Album catalogs: Kuwo (`kw`), Kugou (`kg`), Migu (`mg`)
-- Other provider/kind pairs and local tracks show a clear unsupported message
+- Album catalogs: Kuwo (`kw`), Kugou (`kg`), Migu (`mg`), QQ Music (`tx`), NetEase (`wy`)
+- Missing provider/kind integrations explicitly say “not integrated”; local tracks have a dedicated message
 - Collaborations expose each provider-identified artist as a choice
 - Missing artist IDs are resolved from the exact song detail by original song ID/hash, never a name search
 - Missing IDs after detail lookup show an explicit metadata error
@@ -44,6 +44,8 @@ Desktop entry point: `openMusicCatalog('artist' | 'album', musicInfo)` from `cor
 - Kugou exact-song detail requests author IDs along with author names
 
 ## Verification
+
+For the 2026-10-05 provider audit, queue semantics and current verification boundaries, see [catalog and queue interactions](catalog-queue-interactions-20261005.md). The results below describe the original catalog delivery.
 
 - 17 focused Vitest assertions (single fork, 512 MB): conversion, exact-ID resolution, provider support, collaborators, pagination, partial/empty/unknown totals, Migu stride, close/new-open races, failed-page retry, repeated-page detection, QQ/NetEase response mapping
 - Isolated pure adapter/controller TypeScript check passed

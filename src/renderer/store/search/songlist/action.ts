@@ -71,9 +71,16 @@ const setList = (datas: SearchResult, page: number, text: string): ListInfoItem[
   return listInfo.list
 }
 
+const requestVersions = new Map<string, number>()
+const completedKeys = new Map<string, string>()
+
 export const resetListInfo = (sourceId: LX.OnlineSource | 'all'): [] => {
+  completedKeys.delete(sourceId)
+  requestVersions.set(sourceId, (requestVersions.get(sourceId) ?? 0) + 1)
   let listInfo = listInfos[sourceId]
   if (!listInfo) return []
+  listInfo.error = ''
+  listInfo.key = null
   listInfo.page = 1
   listInfo.limit = 20
   listInfo.total = 0
@@ -85,44 +92,53 @@ export const resetListInfo = (sourceId: LX.OnlineSource | 'all'): [] => {
   return []
 }
 
+/** Expected provider failures are represented in UI state, never as an unhandled view promise. */
 export const search = async(text: string, page: number, sourceId: LX.OnlineSource | 'all'): Promise<ListInfoItem[]> => {
-  const listInfo = listInfos[sourceId]!
+  const listInfo = listInfos[sourceId]
+  if (!listInfo) return []
   if (!text) return resetListInfo(sourceId)
-  const key = `${page}__${sourceId}__${text}`
-  if (listInfo.key == key && listInfo.list.length) return listInfo.list
-  if (sourceId == 'all') {
-    listInfo.noItemLabel = window.i18n.t('list__loading')
-    listInfo.key = key
-    let task = []
-    for (const source of sources) {
-      if (source == 'all' || (page > 1 && page > (maxPages[source]!))) continue
-      task.push((music[source]?.songList.search(text, page, listInfos.all.limit) ?? Promise.reject(new Error('source not found: ' + source))).catch((error: any) => {
-        console.log(error)
-        return {
-          list: [],
-          total: 0,
-          limit: listInfos.all.limit,
-          source,
-        }
-      }))
+  const key = `${page}__${text}`
+  if (completedKeys.get(sourceId) === key && listInfo.key === key && listInfo.list.length && !listInfo.error) return listInfo.list
+  const requestId = (requestVersions.get(sourceId) ?? 0) + 1
+  requestVersions.set(sourceId, requestId)
+  const isCurrent = () => requestVersions.get(sourceId) === requestId
+  completedKeys.delete(sourceId)
+  listInfo.key = key
+  listInfo.error = ''
+  listInfo.noItemLabel = window.i18n.t('list__loading')
+  const failures: string[] = []
+  let cancelled = false
+  const load = async(source: LX.OnlineSource): Promise<SearchResult | null> => {
+    try {
+      const data = await music[source]?.songList.search(text, page, listInfo.limit)
+      if (!data || data.source !== source || !Array.isArray(data.list) || !Number.isFinite(data.total) || data.total < 0 || !Number.isFinite(data.limit) || data.limit <= 0) throw new Error('Invalid search response')
+      return data
+    } catch (error) {
+      if (error instanceof Error && /cancel/i.test(error.message)) cancelled = true
+      else failures.push(source)
+      return null
     }
-    return Promise.all(task).then((results: SearchResult[]) => {
-      if (key != listInfo.key) return []
-      return setLists(results, page, text)
-    })
-  } else {
-    if (listInfo?.key == key && listInfo?.list.length) return listInfo?.list
-    listInfo.noItemLabel = window.i18n.t('list__loading')
-    listInfo.key = key
-    return (music[sourceId]?.songList.search(text, page, listInfo.limit).then((data: SearchResult) => {
-      if (key != listInfo.key) return []
-      return setList(data, page, text)
-    }) ?? Promise.reject(new Error('source not found: ' + sourceId))).catch((error: any) => {
-      resetListInfo(sourceId)
-      listInfo.noItemLabel = window.i18n.t('list__load_failed')
-      console.log(error)
-      throw error
-    })
+  }
+  try {
+    const results = await Promise.all((sourceId === 'all' ? sources.filter((source): source is LX.OnlineSource => source !== 'all') : [sourceId]).map(load))
+    if (!isCurrent()) return []
+    const successful = results.filter((data): data is SearchResult => data !== null)
+    if (!successful.length) {
+      listInfo.error = failures.length ? window.i18n.t('list__load_failed') : ''
+      listInfo.noItemLabel = listInfo.list.length ? '' : listInfo.error
+      return []
+    }
+    const list = sourceId === 'all' ? setLists(successful, page, text) : setList(successful[0], page, text)
+    listInfo.error = failures.length ? window.i18n.t('list__load_failed') + ` (${failures.join(', ')})` : ''
+    if (!list.length && failures.length) listInfo.noItemLabel = listInfo.error
+    // A cancelled/partially failed aggregate remains retryable rather than being cached as complete.
+    if (cancelled) listInfo.key = null
+    else if (!failures.length) completedKeys.set(sourceId, key)
+    return list
+  } catch {
+    if (!isCurrent()) return []
+    listInfo.error = window.i18n.t('list__load_failed')
+    listInfo.noItemLabel = listInfo.list.length ? '' : listInfo.error
+    return []
   }
 }
-

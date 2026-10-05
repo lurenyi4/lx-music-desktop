@@ -185,6 +185,7 @@ export default {
         this.modalCount = ++modalCount
         this.showModal = true
         void nextTick(() => {
+          if (!this.show || !this.$refs.dom_container) return
           const node = this.$refs.dom_container.parentNode
           if (!node.classList.contains('show-modal')) {
             node.classList.add('show-modal')
@@ -219,7 +220,7 @@ export default {
     },
     handleAfterLeave(event) {
       this.$emit('after-leave', event)
-      this.showModal = false
+      if (!this.show) this.showModal = false
     },
   },
 }

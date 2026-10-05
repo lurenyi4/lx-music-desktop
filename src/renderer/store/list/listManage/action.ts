@@ -1,3 +1,4 @@
+import { updateQueueSessionMusic } from '@renderer/store/player/queueSession'
 import { markRaw, markRawList, toRaw } from '@common/utils/vueTools'
 import {
   allMusicList,
@@ -314,6 +315,7 @@ export const listMusicUpdateInfo = (musicInfos: LX.List.ListActionMusicUpdate): 
       meta: musicInfo.meta,
     })
     targetList.splice(index, 1, markRaw(info))
+    updateQueueSessionMusic(id, info)
     updateListIds.add(id)
   }
   return Array.from(updateListIds)

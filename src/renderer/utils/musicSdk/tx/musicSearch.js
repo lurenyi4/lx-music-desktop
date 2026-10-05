@@ -1,3 +1,4 @@
+import { MusicSdkResponseError } from '../responseError'
 import { formatPlayTime, sizeFormate } from '../../index'
 import { formatSingerName } from '../utils'
 import { signRequest } from './utils'
@@ -9,7 +10,6 @@ export default {
   allPage: 1,
   successCode: 0,
   musicSearch(str, page, limit, retryNum = 0, cancelState = { cancelled: false, request: null }) {
-    if (retryNum > 5) return Promise.reject(new Error('搜索失败'))
     if (cancelState.cancelled) return Promise.reject(new Error('request cancelled'))
     const searchRequest = signRequest({
       comm: {
@@ -47,10 +47,11 @@ export default {
       if (cancelState.cancelled) throw new Error('request cancelled')
       // console.log(body)
       const req = body?.['music.search.SearchCgiService'] ?? body?.req
-      if (!req || body.code != this.successCode || req.code != this.successCode) {
-        return this.musicSearch(str, page, limit, ++retryNum, cancelState)
-      }
-      return req.data
+      if (!req || typeof body.code !== 'number' || typeof req.code !== 'number') throw new MusicSdkResponseError()
+      if (body.code !== this.successCode || req.code !== this.successCode) throw new Error('搜索失败')
+      const data = req.data
+      if (!Array.isArray(data?.body?.song?.list) || !Number.isFinite(data?.meta?.sum) || data.meta.sum < 0) throw new MusicSdkResponseError()
+      return data
     })
     promise.cancel = () => {
       cancelState.cancelled = true

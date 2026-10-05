@@ -9,7 +9,7 @@ export type { ListInfoItem } from '@renderer/store/songList/state'
 
 export const sources: Array<LX.OnlineSource | 'all'> = markRaw([])
 
-export type SearchListInfo = Omit<ListInfo, 'source'>
+export type SearchListInfo = Omit<ListInfo, 'source'> & { error?: string }
 
 
 interface ListInfos extends Partial<Record<LX.OnlineSource, SearchListInfo>> {

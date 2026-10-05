@@ -1,3 +1,5 @@
+import txAlbum from '@renderer/utils/musicSdk/tx/album'
+import wyAlbum from '@renderer/utils/musicSdk/wy/album'
 import kgSinger from '@renderer/utils/musicSdk/kg/singer'
 import txSinger from '@renderer/utils/musicSdk/tx/singer'
 import wySinger from '@renderer/utils/musicSdk/wy/singer'
@@ -11,10 +13,12 @@ import { createCatalogAdapter } from './adapter'
 
 export const catalogAdapter = createCatalogAdapter({
   tx: {
+    album: (id, page, limit) => txAlbum.getAlbumDetail(id, page, limit),
     artist: async(id, page, limit) => txSinger.getSongList(id, page, limit),
     detail: async(music) => getTxMusicInfo(music.meta.songId),
   },
   wy: {
+    album: (id, page, limit) => wyAlbum.getAlbumDetail(id, page, limit),
     artist: (id, page, limit) => wySinger.getSongList(id, page, limit),
     detail: async(music) => {
       // The legacy JS request adds promise dynamically; type only the response we consume.

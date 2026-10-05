@@ -1,8 +1,9 @@
+import { MusicSdkResponseError } from '@renderer/utils/musicSdk/responseError'
 import { toNewMusicInfo } from '@common/utils/tools'
 import { type CatalogKind, type CatalogPage, type CatalogProviders, type CatalogTarget } from './types'
 
 export class CatalogError extends Error {
-  constructor(public readonly code: 'unsupported' | 'metadata' | 'response', message: string) {
+  constructor(public readonly code: 'unsupported' | 'not-integrated' | 'metadata' | 'response', message: string) {
     super(message)
   }
 }
@@ -11,8 +12,9 @@ const validId = (id: unknown): id is string | number =>
 
 export const createCatalogAdapter = (providers: CatalogProviders) => ({
   async resolve(kind: CatalogKind, music: LX.Music.MusicInfo): Promise<CatalogTarget[]> {
-    if (music.source === 'local' || !providers[music.source]?.[kind]) {
-      throw new CatalogError('unsupported', window.i18n.t(kind === 'artist' ? 'catalog__unsupported_artist' : 'catalog__unsupported_album', { source: music.source }))
+    if (music.source === 'local') throw new CatalogError('unsupported', window.i18n.t('catalog__local'))
+    if (!providers[music.source]?.[kind]) {
+      throw new CatalogError('not-integrated', window.i18n.t(kind === 'artist' ? 'catalog__unsupported_artist' : 'catalog__unsupported_album', { source: music.source }))
     }
     const provider = providers[music.source]!
     let metadata = music.meta
@@ -40,11 +42,17 @@ export const createCatalogAdapter = (providers: CatalogProviders) => ({
   async load(target: CatalogTarget, page = 1, limit = 50): Promise<CatalogPage> {
     const provider = providers[target.source]
     const fetchPage = provider?.[target.kind]
-    if (!fetchPage) throw new CatalogError('unsupported', window.i18n.t('catalog__unsupported'))
+    if (!fetchPage) throw new CatalogError('not-integrated', window.i18n.t('catalog__unsupported'))
     if (!validId(target.id) || !Number.isInteger(page) || page < 1 || !Number.isInteger(limit) || limit < 1) {
       throw new CatalogError('metadata', window.i18n.t('catalog__invalid_parameters'))
     }
-    const result = await fetchPage(target.id, page, limit)
+    let result
+    try {
+      result = await fetchPage(target.id, page, limit)
+    } catch (error) {
+      if (error instanceof MusicSdkResponseError) throw new CatalogError('response', window.i18n.t('catalog__invalid_response'))
+      throw error
+    }
     if (!Array.isArray(result?.list)) throw new CatalogError('response', window.i18n.t('catalog__invalid_response'))
     const totalValue = result.total == null ? NaN : Number(result.total)
     const total = Number.isFinite(totalValue) && totalValue >= 0 ? totalValue : null

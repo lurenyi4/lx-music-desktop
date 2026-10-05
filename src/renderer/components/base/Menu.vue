@@ -1,17 +1,19 @@
 <template>
   <teleport to="#root">
-    <ul ref="dom_menu" :class="$style.list" :style="menuStyles" role="toolbar" :aria-hidden="!modelValue">
+    <ul ref="dom_menu" :class="$style.list" :style="menuStyles" role="menu" :aria-hidden="!modelValue">
       <li
         v-for="item in menus"
         v-show="!item.hide && (item.action == 'download' ? appSetting['download.enable'] : true)"
         :key="item.action"
         :class="$style.listItem"
-        role="tab"
-        tabindex="0"
+        role="menuitem"
+        :tabindex="modelValue && !item.disabled ? 0 : -1"
         :aria-label="item[itemName]"
         ignore-tip
         :disabled="item.disabled ? true : null"
         @click="menuClick(item)"
+        @keydown.enter.prevent="menuClick(item)"
+        @keydown.space.prevent="menuClick(item)"
       >
         {{ item[itemName] }}
       </li>
@@ -94,8 +96,9 @@ export default {
   border-radius: @radius-border;
   background-color: var(--color-content-background);
   box-shadow: 0 1px 8px 0 rgba(0,0,0,.2);
-  z-index: 10;
-  overflow: hidden;
+  z-index: 1000;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
   // will-change: transform;
 }
 .listItem {

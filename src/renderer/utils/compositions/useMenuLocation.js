@@ -1,85 +1,58 @@
 import { onMounted, onBeforeUnmount, watch, reactive, ref } from '@common/utils/vueTools'
 
-
 export default ({ visible, location, onHide }) => {
-  const transition1 = 'transform, opacity'
-  const transition2 = 'transform, opacity, top, left'
   let show = false
   const dom_menu = ref(null)
   const menuStyles = reactive({
-    left: 0,
-    top: 0,
+    left: '0px',
+    top: '0px',
     opacity: 0,
     transitionProperty: 'transform, opacity',
-    transform: 'scale(.8, .7) translate(0,0)',
+    transform: 'scale(.8, .7)',
     pointerEvents: 'none',
   })
-
-  const handleShow = () => {
-    show = true
-    menuStyles.opacity = 1
-    menuStyles.transform = `scale(1) translate(${handleGetOffsetXY(location.value.x, location.value.y)})`
-    menuStyles.pointerEvents = 'auto'
+  const place = () => {
+    const menu = dom_menu.value
+    if (!menu) return
+    const parent = menu.offsetParent
+    const bounds = parent?.getBoundingClientRect() ?? { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
+    // Callers use page coordinates; convert to the actual teleport container, not a guessed border offset.
+    const x = location.value.x - window.scrollX - bounds.left + 2
+    const y = location.value.y - window.scrollY - bounds.top
+    menuStyles.left = `${Math.max(4, Math.min(x, bounds.width - menu.clientWidth - 4))}px`
+    menuStyles.top = `${Math.max(4, Math.min(y, bounds.height - menu.clientHeight - 4))}px`
   }
-  const handleHide = () => {
-    menuStyles.opacity = 0
-    menuStyles.transform = 'scale(.8, .7) translate(0, 0)'
-    menuStyles.pointerEvents = 'none'
-    show = false
+  const update = () => {
+    show = visible.value
+    if (show) place()
+    menuStyles.opacity = show ? 1 : 0
+    menuStyles.transform = show ? 'scale(1)' : 'scale(.8, .7)'
+    menuStyles.pointerEvents = show ? 'auto' : 'none'
   }
-  const handleGetOffsetXY = (left, top) => {
-    const listWidth = dom_menu.value.clientWidth
-    const listHeight = dom_menu.value.clientHeight
-    const dom_container_parant = dom_menu.value.offsetParent
-    const containerWidth = dom_container_parant.clientWidth
-    const containerHeight = dom_container_parant.clientHeight
-    const offsetWidth = containerWidth - left - listWidth
-    const offsetHeight = containerHeight - top - listHeight
-    let x = 0
-    let y = 0
-    if (containerWidth > listWidth && offsetWidth < 12) {
-      x = offsetWidth - 12
-    }
-    if (containerHeight > listHeight && offsetHeight < 5) {
-      y = offsetHeight - 5
-    }
-    return `${x}px, ${y}px`
+  const dismiss = () => { if (show) onHide() }
+  const outside = (event) => {
+    if (!dom_menu.value?.contains(event.target)) dismiss()
   }
-  const handleDocumentClick = (event) => {
-    if (!show) return
-
-    if (event.target == dom_menu.value || dom_menu.value.contains(event.target)) return
-
-    if (show && menuStyles.transitionProperty != transition1) menuStyles.transitionProperty = transition1
-
-    onHide()
+  const keydown = (event) => {
+    if (!show || event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    dismiss()
   }
-
-  watch(visible, visible => {
-    visible ? handleShow() : handleHide()
-  }, { immediate: true })
-
-  watch(location, location => {
-    menuStyles.left = location.x - window.lx.rootOffset + 2 + 'px'
-    menuStyles.top = location.y - window.lx.rootOffset + 'px'
-    // nextTick(() => {
-    if (show) {
-      if (menuStyles.transitionProperty != transition2) menuStyles.transitionProperty = transition2
-      menuStyles.transform = `scale(1) translate(${handleGetOffsetXY(location.x, location.y)})`
-    }
-    // })
-  }, { deep: true })
-
+  watch(visible, update, { flush: 'post' })
+  watch(location, () => { if (show) place() }, { deep: true, flush: 'post' })
   onMounted(() => {
-    document.addEventListener('click', handleDocumentClick)
+    update()
+    document.addEventListener('click', outside, true)
+    document.addEventListener('keydown', keydown, true)
+    document.addEventListener('scroll', outside, true)
+    window.addEventListener('resize', dismiss)
   })
-
   onBeforeUnmount(() => {
-    document.removeEventListener('click', handleDocumentClick)
+    document.removeEventListener('click', outside, true)
+    document.removeEventListener('keydown', keydown, true)
+    document.removeEventListener('scroll', outside, true)
+    window.removeEventListener('resize', dismiss)
   })
-
-  return {
-    dom_menu,
-    menuStyles,
-  }
+  return { dom_menu, menuStyles }
 }

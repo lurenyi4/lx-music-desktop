@@ -6,7 +6,7 @@ import { appSetting } from '@renderer/store/setting'
 import { playInfo, tempPlayList } from '@renderer/store/player/state'
 vi.mock('./action', () => ({ getNextPlayMusicInfo: vi.fn() }))
 vi.mock('./utils', () => ({ filterList: vi.fn() }))
-vi.mock('@renderer/store/player/action', () => ({ getList: () => [] }))
+vi.mock('@renderer/store/player/action', () => ({ getPlaybackList: () => [], clearTempPlayeList: vi.fn(), clearPlayedList: vi.fn(), setPlayListId: vi.fn(), setPlayMusicInfo: vi.fn() }))
 vi.mock('@renderer/store/player/state', () => ({ playedList: [], playInfo: { playerListId: 'list', playerPlayIndex: 0 }, tempPlayList: [] }))
 vi.mock('@renderer/store/setting', () => ({ appSetting: { 'player.togglePlayMethod': 'list' } }))
 const song = (id: string): LX.Music.MusicInfoOnline => ({ id, name: id, singer: 'Artist', source: 'kw', interval: null, meta: { songId: id, albumName: '', qualitys: [], _qualitys: {} } })

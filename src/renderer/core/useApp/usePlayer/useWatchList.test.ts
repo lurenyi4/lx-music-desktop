@@ -3,11 +3,11 @@ import { EventEmitter } from 'node:events'
 import useWatchList from './useWatchList'
 import { playMusicInfo } from '@renderer/store/player/state'
 import { playNext, stop } from '@renderer/core/player'
-vi.mock('@common/utils/vueTools', () => ({ onBeforeUnmount: vi.fn() }))
+vi.mock('@common/utils/vueTools', () => ({ onBeforeUnmount: vi.fn(), shallowReactive: (value: unknown) => value }))
 vi.mock('@common/utils', () => ({ throttle: (fn: unknown) => fn }))
 vi.mock('@renderer/store/player/state', () => ({ playInfo: { playerListId: 'original' }, playMusicInfo: { listId: null, isTempPlay: true } }))
 vi.mock('@renderer/store/player/action', () => ({ updatePlayIndex: () => ({ playIndex: -1 }), setPlayMusicInfo: vi.fn() }))
-vi.mock('@renderer/core/player', () => ({ playNext: vi.fn(), stop: vi.fn() }))
+vi.mock('@renderer/core/player', () => ({ playNext: vi.fn(), stop: vi.fn(), resetRandomNextMusicInfo: vi.fn() }))
 let events: EventEmitter
 beforeEach(() => {
   vi.clearAllMocks()

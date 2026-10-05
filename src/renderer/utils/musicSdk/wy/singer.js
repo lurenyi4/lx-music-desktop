@@ -8,7 +8,7 @@ export default {
    * @param {*} id
    */
   getInfo(id) {
-    return eapiRequest('/api/artist/head/info/get', { id }).then(({ body }) => {
+    return eapiRequest('/api/artist/head/info/get', { id }).promise.then(({ body }) => {
       if (!body || body.code != 200) throw new Error('get singer info faild.')
       return {
         source: 'wy',
@@ -37,7 +37,7 @@ export default {
       id,
       limit,
       offset: limit * (page - 1),
-    }).then(({ body }) => {
+    }).promise.then(({ body }) => {
       if (!body.songs || body.code != 200) throw new Error('get singer song list faild.')
 
       const list = this.filterSongList(body.songs)
@@ -60,7 +60,7 @@ export default {
     return eapiRequest(`/api/artist/albums/${id}`, {
       limit,
       offset: limit * (page - 1),
-    }).then(({ body }) => {
+    }).promise.then(({ body }) => {
       if (!body.hotAlbums || body.code != 200) throw new Error('get singer album list faild.')
 
       const list = this.filterAlbumList(body.hotAlbums)

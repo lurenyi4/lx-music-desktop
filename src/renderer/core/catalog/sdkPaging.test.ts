@@ -26,7 +26,7 @@ describe('provider singer pagination contracts', () => {
     }
   })
   it('NetEase preserves metadata without privileges and converts duration to seconds', async() => {
-    mocks.eapiRequest.mockResolvedValue({ body: { code: 200, total: 300, songs: [{ id: 1, name: 'Song', ar: [{ id: 7, name: 'Artist' }], al: { id: 8, name: 'Album' }, dt: 120000 }] } })
+    mocks.eapiRequest.mockReturnValue({ promise: Promise.resolve({ body: { code: 200, total: 300, songs: [{ id: 1, name: 'Song', ar: [{ id: 7, name: 'Artist' }], al: { id: 8, name: 'Album' }, dt: 120000 }] } }) })
     for (const page of [1, 2, 3]) {
       const result = await wySinger.getSongList(7, page, 100)
       expect(mocks.eapiRequest.mock.lastCall![1].offset).toBe((page - 1) * 100)

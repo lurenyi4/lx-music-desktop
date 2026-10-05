@@ -89,6 +89,6 @@ describe('catalog state localization', () => {
     const controller = createCatalogController(state, { resolve: async() => [target], load: async() => { throw Error('offline') } })
     await controller.open('artist', song('origin'))
     expect(state.title).toBe('Artist · Artist songs · wy')
-    expect(state.error).toBe('Could not load the catalog. Please retry')
+    expect(state.error).toBe('Catalog request failed (network or provider error). Please retry')
   })
 })

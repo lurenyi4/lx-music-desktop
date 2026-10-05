@@ -75,7 +75,8 @@
     "test:e2e": "npm run build && npm run test:e2e:platform && npm run test:e2e:radio && npm run test:e2e:sync && npm run test:e2e:user-api",
     "postinstall": "node build-config/postinstall.js",
     "dp": "cross-env ELECTRON_GET_USE_PROXY=true GLOBAL_AGENT_HTTPS_PROXY=http://127.0.0.1:2081 npm run pack",
-    "up": "cross-env ELECTRON_GET_USE_PROXY=true GLOBAL_AGENT_HTTPS_PROXY=http://127.0.0.1:2081 npm i"
+    "up": "cross-env ELECTRON_GET_USE_PROXY=true GLOBAL_AGENT_HTTPS_PROXY=http://127.0.0.1:2081 npm i",
+    "test:catalog-dom": "webpack --config e2e/catalogQueue/webpack.config.cjs && node --test e2e/catalogQueue/dom-check.cjs"
   },
   "browserslist": [
     "Electron 22.3.0"
@@ -151,6 +152,7 @@
     "eslint-webpack-plugin": "^4.2.0",
     "html-webpack-plugin": "^5.6.8",
     "js-yaml": "4.3.1",
+    "jsdom": "26.1.0",
     "less": "^4.9.1",
     "less-loader": "^13.0.0",
     "mini-css-extract-plugin": "^2.10.2",

@@ -1,5 +1,10 @@
 <template>
   <div :class="$style.container">
+    <div v-if="listInfo.error" :class="$style.error" role="alert">
+      <span>{{ listInfo.error }}</span>
+      <button type="button" @click="search(searchText, props.sourceId, props.page || 1)">{{ $t('retry') }}</button>
+    </div>
+    <div :class="$style.results">
     <material-online-list
       ref="listRef"
       :page="listInfo.page"
@@ -12,6 +17,7 @@
       @toggle-page="handleTogglePage"
       @play-list="handlePlayList"
     />
+    </div>
   </div>
 </template>
 
@@ -39,12 +45,12 @@ const {
 
 watch(() => [props.sourceId, props.page], ([sourceId, page]) => {
   setTimeout(() => {
-    search(searchText.value, sourceId as SearchSource, page as number || 1)
+    void search(searchText.value, sourceId as SearchSource, page as number || 1)
   })
 })
 watch(searchText, (searchText) => {
   setTimeout(() => {
-    search(searchText, props.sourceId, props.page)
+    void search(searchText, props.sourceId, props.page)
   })
 }, {
   immediate: true,
@@ -66,6 +72,8 @@ const handleTogglePage = (page: number) => {
 
 <style lang="less" module>
 .container {
+  display: flex;
+  flex-direction: column;
   position: absolute;
   left: 0;
   top: 0;
@@ -79,4 +87,16 @@ const handleTogglePage = (page: number) => {
   flex: auto;
 }
 
+.results {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+}
+.error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  flex: none;
+}
 </style>
