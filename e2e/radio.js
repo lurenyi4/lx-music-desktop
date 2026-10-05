@@ -17,6 +17,7 @@ const fs = require('fs')
 const { launchApp, collectErrors, screenshot, acceptAgreement, ART_DIR } = require('./harness')
 const { dismissOverlayModal, readPlaybar, clickPathRowAndVerify } = require('./pathProbe')
 const OFFLINE_SEARCH_SOURCE = 'kw'
+const { startRadioProvider, install: installRadioProvider, initScript: radioInitScript } = require('./radioProvider.cjs')
 
 const results = []
 function record(name, ok, detail = '') {
@@ -95,6 +96,7 @@ async function playSearchRow(window, offset) {
 ;(async() => {
   fs.mkdirSync(ART_DIR, { recursive: true })
   let profileDir = null
+  let provider = null
 
   // ============ 第一程：开火与行为 ============
   {
@@ -207,11 +209,19 @@ async function playSearchRow(window, offset) {
     })
 
     await step(window, errors, 'R9-断网连续失败收台与复活（AC9）', async() => {
+      provider = await startRadioProvider()
+      await installRadioProvider(window, provider.baseURL)
       // Aggregate search refetches on every return and loses rows offline.
       // A single provider reuses its cache for the identical keyword/page.
       const offlineSearchRoute = '#/search?' + new URLSearchParams({ source: OFFLINE_SEARCH_SOURCE, type: 'music', text: '林俊杰', page: '1' })
       await nav(window, offlineSearchRoute)
       await window.locator('.list-item').nth(4).waitFor({ state: 'visible', timeout: 30000 })
+      // A real online plan on fixture data resets the run's failure counter.
+      await playSearchRow(window, 0)
+      await nav(window, '#/explore')
+      const online = await waitPlanSettled(window)
+      if (!/本地计划/.test(online) || /这次计划没有完成/.test(online)) throw new Error('离线用例准备阶段没有真实成功计划')
+      const fixtureStart = provider.requests.length
       const offlineFailures = []
       const searchReloads = []
       let endedForFailures = false
@@ -228,6 +238,7 @@ async function playSearchRow(window, offset) {
       window.on('console', observeOffline)
       const cdp = await window.context().newCDPSession(window)
       await cdp.send('Network.enable')
+      provider.setOffline(true)
       await cdp.send('Network.setBlockedURLs', { urls: ['http://*/*', 'https://*/*'] })
       try {
         // 连续路径外切歌：每次触发一次重锚计划，断网下候选池为空 → 计划失败；计满三次即收台
@@ -260,8 +271,13 @@ async function playSearchRow(window, offset) {
         if (!endedForFailures || offlineFailures.length < 3) throw new Error(`缺少三次真实计划失败及达到上限收台证据: failures=${offlineFailures.length}, ended=${endedForFailures}`)
         if (searchReloads.length) throw new Error(`断网期间缓存搜索被重新请求: ${searchReloads.join('\n')}`)
         console.log(`      [offline proof] failures=${offlineFailures.length} ended=${endedForFailures} cachedSearchReloads=${searchReloads.length}`)
+        const blocked = provider.requests.slice(fixtureStart).filter(request => request.offline && !request.tip)
+        if (!blocked.length) throw new Error('缺少实际 provider 请求被离线 fixture 拒绝的证据')
+        if (blocked.some(request => new URL(request.target).searchParams.get('rn') === '30')) throw new Error('缓存搜索查询在断网时重新请求了 provider')
+        console.log(`      [provider proof] offlineRejected=${blocked.length} cachedSeedReloads=0`)
       } finally {
         window.off('console', observeOffline)
+        provider.setOffline(false)
         await cdp.send('Network.setBlockedURLs', { urls: [] })
       }
       // 收台后电台仍为开：恢复网络 + 切歌应自动重开新台
@@ -307,7 +323,10 @@ async function playSearchRow(window, offset) {
 
   // ============ 第二程：同 profile 重启自动开台（AC10） ============
   {
-    const { app, window } = await launchApp({ profileDir })
+    const { app, window } = await launchApp({ profileDir, initScript: provider ? radioInitScript(provider.baseURL) : undefined })
+    if (provider) {
+      await installRadioProvider(window, provider.baseURL)
+    }
     const errors = collectErrors(window)
     await window.waitForTimeout(3000)
 
@@ -343,6 +362,7 @@ async function playSearchRow(window, offset) {
   const fails = results.filter(r => !r.ok)
   console.log(`PASS ${results.length - fails.length}/${results.length}`)
   if (fails.length) fails.forEach(f => console.log(`FAIL: ${f.name} | ${f.detail}`))
+  if (provider) await provider.close()
   process.exit(fails.length ? 1 : 0)
 })().catch(err => {
   console.error('RADIO E2E CRASHED:', err)

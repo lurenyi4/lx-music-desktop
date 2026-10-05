@@ -72,6 +72,7 @@ function assertProdBuild() {
  * @param {NodeJS.ProcessEnv} [opts.extraEnv]
  * @param {string} [opts.profileDir] 复用已有 profile（否则新建）
  * @param {Record<string, unknown>} [opts.extraSettings] 预写入 profile 的额外设置项
+ * @param {string} [opts.initScript] 仅测试使用，在 renderer 页面脚本前安装外部依赖 fixture
  * @returns {Promise<{app: import('playwright-core').ElectronApplication, window: import('playwright-core').Page, profileDir: string}>}
  */
 async function launchApp(opts = {}) {
@@ -92,6 +93,7 @@ async function launchApp(opts = {}) {
     },
     timeout: 180000,
   }).catch(error => { log(`[launch failed] ${error.stack ?? error.message}`); throw error })
+  if (opts.initScript) await app.context().addInitScript(opts.initScript)
   for (const stream of ['stdout', 'stderr']) app.process()[stream]?.on('data', data => log(`[${stream}] ${data.toString()}`))
   app.on('console', message => log(`[main ${message.type()}] ${message.text()}`))
   app.on('close', () => log('[app closed]'))

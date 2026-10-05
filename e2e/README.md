@@ -82,6 +82,11 @@ node e2e/smoke.js  # 仅冒烟：启动+页面文本+错误采集
 - Linux CI 安装中文字体并创建 PulseAudio null sink，保留真实播放流程且提供可枚举的虚拟音频输出。
 - 电台 R9 使用单提供方的同关键词/页码缓存返回搜索页；聚合搜索重新挂载会重发请求，不能假定断网时仍有行。
   R9 仍要求真实计划失败与上限收台日志、UI 收台及恢复，并检查缓存查询没有在断网期间重发。
+- R9/R10 另使用 `radioProvider.cjs` 的本地 HTTP provider fixture：KW wire 数据仍由真实 SDK 解析，
+  搜索缓存、队列、重锚、计划失败计数和收台/恢复均执行生产代码。离线模式明确拒绝真实 Node provider 请求，
+  因为浏览器 CDP 网络阻断不能覆盖 renderer 的 Needle/Node HTTP 搜索。
+  fixture 只替换这些用例的搜索 provider，R1–R7 和平台/同步/多活音源的在线链路仍独立测试；
+  R10 通过启动前 initScript 安装 fixture，保持真实应用重启，不通过重新加载 renderer 修复状态。
 
 ## 路径点击跳播探针（pathProbe.js）
 

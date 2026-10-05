@@ -17,7 +17,7 @@ Windows 7 的 Electron 22 保留显式的历史兼容绑定。`npm run test:ci` 
 Linux ARM 打包需要 GNU 交叉编译器；Windows 源码编译需要 C++ Build Tools，macOS 需要 Xcode 命令行工具。
 外部音源网络错误仍会令 E2E 门禁失败，不能以单测或打包成功替代三端真实运行结果。
 
-本轮本机 Windows 验证已通过 65 文件/901 单测、lint、typecheck、生产构建、二十项 CI/原生准备回归和
+本轮本机 Windows 验证已通过 65 文件/901 单测、lint、typecheck、生产构建、二十二项 CI/原生准备回归和
 Electron 42.11.6（ABI 146、x64）SQLite 实际读写。这些 Windows 本机证据不能代表 Linux/macOS 或其他架构已通过，
 三端最终状态以 GitHub Actions 实跑结果为准。
 修复固定绑定路径后，真实 Electron E2E 通过平台 8/8、电台 12/12、歌单同步 7/7、多活音源 8/8。
@@ -58,6 +58,22 @@ R9 改用固定单提供方缓存路由并等待真正可见的结果行，保�
 该观察不构成稳定解决的证据，最终验收仍要求当前提交的三端 CI 全部通过。
 最新 Windows 电台 E2E 在 600 秒硬上限内 12/12 通过，R9 实际记录四条计划失败日志（含重试）、上限收台信号、
 缓存搜索查询零重发，并验证恢复；没有跳过重锚、失败、收台或复活断言。
+
+第三轮 [CI run 37271109517](https://github.com/lurenyi4/lx-music-desktop/actions/runs/37271109517) 的 Windows、macOS 完整测试 job 和七个打包 job 均成功。
+Linux 的平台 E2E 和前置检查通过，但电台 R9 在进入离线阶段前因外部 KW 搜索加载失败，等待第 5 行超时；
+重启同一搜索也导致请求超时错误，测试 job 与总门禁正确失败。这是外部数据准备不稳定，不是三端均通过。
+
+R9/R10 改用局部本地 HTTP provider fixture：真实 KW SDK 解析固定 wire 数据，其他搜索 provider 可确定性失败；
+仅 provider 传输边界被替换，生产搜索缓存、队列、重锚、计划、失败上限、收台和恢复不变。
+SDK 使用 Needle/Node HTTP，原 CDP 阻断并不覆盖它；现在离线阶段由 fixture 对实际 provider 请求返回服务不可用，
+断言要求至少三条真实失败日志、达到上限收台、缓存种子查询零重发、实际拒绝请求以及恢复。
+R1–R7 和其他在线套件仍独立使用真实音乐平台。fixture 随真正重启提前安装，未通过 renderer reload 修复初始化。
+
+最终 Windows Radio 在 600 秒硬上限内 12/12 通过，实际记录 failures=4（含重试）、ended=true、cachedSearchReloads=0、
+offlineRejected=108、cachedSeedReloads=0，并通过 R10/R11。原始 stdout/stderr 直接 UTF-8 记录在本机
+`C:\Users\A\AppData\Local\Temp\lx-radio-round4-final-stdout.txt`；不是事后报告副本。
+真实 KW SDK HTTP fixture 的在线解析、离线空候选及恢复回归通过，现有 22 项配置/native 回归和 SQLite smoke 通过。
+fixture 修复后的 Linux CI 仍待重跑确认。
 
 针对 `1b4e09c9` 的六项审查发现，补齐音源隔离、初始化、播放入口和推荐数据传递的边界。
 

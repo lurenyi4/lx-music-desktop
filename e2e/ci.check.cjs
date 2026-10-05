@@ -8,6 +8,7 @@ const { spawnSync } = require('node:child_process')
 const read = name => yaml.load(fs.readFileSync(path.join(__dirname, '../.github/workflows', name), 'utf8'))
 require('./agreement.check.cjs')
 require('./radio.check.cjs')
+require('./radioProvider.check.cjs')
 
 describe('CI release gate', () => {
   it('keeps host compiler defaults and only exports Linux cross compilers', () => {
