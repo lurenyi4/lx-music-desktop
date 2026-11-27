@@ -2,6 +2,7 @@
 transition(enter-active-class="animated slideInRight" leave-active-class="animated slideOutDown" @after-enter="handleAfterEnter" @after-leave="handleAfterLeave")
   div(v-if="isShowPlayerDetail" :class="[$style.container, { fullscreen: isFullscreen }]" @contextmenu="handleContextMenu")
     div(:class="$style.bg")
+    div(v-if="musicInfo.pic" :class="$style.ambient" :style="{ backgroundImage: `url(${JSON.stringify(musicInfo.pic)})` }")
     //- div(:class="$style.bg" :style="bgStyle")
     //- div(:class="$style.bg2")
     ControlBtnsLeftHeader(v-if="appSetting['common.controlBtnPosition'] == 'left'")
@@ -10,11 +11,15 @@ transition(enter-active-class="animated slideInRight" leave-active-class="animat
       div.left(:class="$style.left")
         //- div(:class="$style.info")
         div(:class="$style.info")
-          img(v-if="musicInfo.pic" :class="$style.img" :src="musicInfo.pic")
+          img(v-if="musicInfo.pic" :class="$style.img" :src="musicInfo.pic" @error="handlePlayerPicError")
           div.description(:class="['scroll', $style.description]")
             p {{ $t('player__music_name') }}{{ musicInfo.name }}
-            p {{ $t('player__music_singer') }}{{ musicInfo.singer }}
-            p(v-if="musicInfo.album") {{ $t('player__music_album') }}{{ musicInfo.album }}
+            p
+              | {{ $t('player__music_singer') }}
+              CatalogLink(v-if="playMusicInfo.musicInfo" kind="artist" :music="playMusicInfo.musicInfo.metadata ? playMusicInfo.musicInfo.metadata.musicInfo : playMusicInfo.musicInfo")
+            p(v-if="musicInfo.album")
+              | {{ $t('player__music_album') }}
+              CatalogLink(v-if="playMusicInfo.musicInfo" kind="album" :music="playMusicInfo.musicInfo.metadata ? playMusicInfo.musicInfo.metadata.musicInfo : playMusicInfo.musicInfo")
 
       transition(enter-active-class="animated fadeIn" leave-active-class="animated fadeOut")
         LyricPlayer(v-if="visibled")
@@ -41,12 +46,14 @@ import {
   setShowPlayLrcSelectContentLrc,
 } from '@renderer/store/player/action'
 import LyricPlayer from './LyricPlayer.vue'
+import CatalogLink from '@renderer/components/common/CatalogLink.vue'
 import PlayBar from './PlayBar.vue'
 import MusicComment from './components/MusicComment/index.vue'
 import ControlBtnsLeftHeader from './ControlBtnsLeftHeader.vue'
 import ControlBtnsRightHeader from './ControlBtnsRightHeader.vue'
 import { registerAutoHideMounse, unregisterAutoHideMounse } from './autoHideMounse'
 import { appSetting } from '@renderer/store/setting'
+import { handlePlayerPicError } from '@renderer/core/player'
 import { closeWindow, maxWindow, minWindow, setFullScreen } from '@renderer/utils/ipc'
 
 export default {
@@ -55,6 +62,7 @@ export default {
     ControlBtnsLeftHeader,
     ControlBtnsRightHeader,
     LyricPlayer,
+    CatalogLink,
     PlayBar,
     MusicComment,
   },
@@ -104,6 +112,7 @@ export default {
       isShowPlayerDetail,
       isShowPlayComment,
       musicInfo,
+      handlePlayerPicError,
       hide,
       handleContextMenu,
       hideComment,
@@ -190,15 +199,17 @@ export default {
     background-color: var(--color-main-background);
   }
 }
-// .bg2 {
-//   position: absolute;
-//   width: 100%;
-//   height: 100%;
-//   top: 0;
-//   left: 0;
-//   z-index: -1;
-//   background-color: rgba(255, 255, 255, .8);
-// }
+.ambient {
+  position: absolute;
+  inset: -40px;
+  background-position: center;
+  background-size: cover;
+  filter: blur(72px) saturate(1.35);
+  transform: scale(1.15);
+  opacity: .22;
+  pointer-events: none;
+  z-index: -1;
+}
 
 .main {
   flex: auto;
@@ -242,27 +253,36 @@ export default {
 .info {
   display: flex;
   flex-flow: column nowrap;
-  justify-content: flex-start;
-  max-width: 300px;
+  justify-content: center;
+  max-width: 310px;
+  width: 100%;
   min-height: 0;
 }
 .img {
-  max-width: 100%;
-  max-height: 80%;
-  min-width: 100%;
-  box-shadow: 0 0 6px var(--color-primary-alpha-500);
-  border-radius: 6px;
-  opacity: .8;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  max-height: 76%;
+  box-shadow: var(--ui-shadow-lg);
+  border-radius: var(--ui-radius-lg);
+  opacity: 1;
 }
 .description {
-  max-width: 300px;
-  margin-top: 15px;
+  max-width: 310px;
+  margin-top: 18px;
   padding-bottom: 15px;
   min-height: 0;
   p {
-    line-height: 1.5;
-    font-size: 14px;
+    line-height: 1.65;
+    font-size: 13.5px;
+    color: var(--color-font-label);
     overflow-wrap: break-word;
+    &:first-child {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--color-font);
+      margin-bottom: 4px;
+    }
   }
 }
 

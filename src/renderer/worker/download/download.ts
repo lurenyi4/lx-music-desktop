@@ -1,4 +1,6 @@
+import path from 'node:path'
 import { createDownload, type DownloaderType, type Options as DownloadOptions } from '@common/utils/download'
+import { getRequestAgent } from '@common/utils/download/util'
 // import music from '@renderer/utils/musicSdk'
 import { createDownloadInfo } from './utils'
 // import {
@@ -20,6 +22,35 @@ const dls = new Map<string, DownloaderType>()
 const tryNum = new Map<string, number>()
 const taskActions = new Map<string, (action: LX.Download.DownloadTaskActions) => void>()
 const tasks = new Map<string, LX.Download.ListItem>()
+const taskSkipExistFiles = new Map<string, boolean>()
+
+const prepareTargetFile = async(id: string, filePath: string, skipExistFile: boolean): Promise<boolean> => {
+  if (skipExistFile) {
+    const stats = await getFileStats(filePath)
+    if (stats && stats.size > 100) {
+      sendAction(id, {
+        action: 'error',
+        data: {
+          error: 'download_status_error_check_path_exist',
+        },
+      })
+      return false
+    }
+  } else if (await checkPath(filePath)) {
+    try {
+      await removeFile(filePath)
+    } catch (err) {
+      sendAction(id, {
+        action: 'error',
+        data: {
+          error: 'download_status_error_check_path',
+        },
+      })
+      return false
+    }
+  }
+  return true
+}
 
 export const checkList = (list: LX.Download.ListItem[], musicInfo: LX.Music.MusicInfo, quality: LX.Quality, ext: string): boolean => {
   return list.some(s => s.id === musicInfo.id && (s.metadata.quality === quality || s.metadata.ext === ext))
@@ -72,30 +103,8 @@ const createTask = async(downloadInfo: LX.Download.ListItem, savePath: string, s
   if (!tasks.has(downloadInfo.id)) return
 
   if (downloadInfo.downloaded == 0) {
-    if (skipExistFile) {
-      const stats = await getFileStats(downloadInfo.metadata.filePath)
-      if (stats && stats.size > 100) {
-        sendAction(downloadInfo.id, {
-          action: 'error',
-          data: {
-            error: 'download_status_error_check_path_exist',
-          },
-        })
-        return
-      }
-    } else if (await checkPath(downloadInfo.metadata.filePath)) {
-      try {
-        await removeFile(downloadInfo.metadata.filePath)
-      } catch (err) {
-        sendAction(downloadInfo.id, {
-          action: 'error',
-          data: {
-            error: 'download_status_error_check_path',
-          },
-        })
-        return
-      }
-    }
+    if (!await prepareTargetFile(downloadInfo.id, downloadInfo.metadata.filePath, skipExistFile)) return
+    if (!tasks.has(downloadInfo.id)) return
   }
 
   const downloadOptions: DownloadOptions = {
@@ -224,14 +233,30 @@ const createTask = async(downloadInfo: LX.Download.ListItem, savePath: string, s
   dls.set(downloadInfo.id, createDownload(downloadOptions))
 }
 
-export const updateUrl = (id: string, url: string) => {
+export const updateUrl = async(
+  id: string,
+  url: string,
+  options?: { savePath?: string, fileName?: string, proxy?: { host: string, port: number } },
+) => {
   const task = tasks.get(id)
   if (!task) return
-  task.metadata.url = url
-  // commit('setStatusText', { downloadInfo, text: '链接刷新成功' })
   const dl = dls.get(id)
   if (!dl) return
-  dl.refreshUrl(url)
+  const nextFilePath = options?.savePath && options?.fileName
+    ? path.join(options.savePath, options.fileName)
+    : task.metadata.filePath
+  if (nextFilePath !== task.metadata.filePath && task.downloaded == 0) {
+    const ok = await prepareTargetFile(id, nextFilePath, taskSkipExistFiles.get(id) ?? false)
+    if (!ok || dls.get(id) !== dl || !tasks.has(id)) return
+  }
+  task.metadata.url = url
+  if (options?.fileName) task.metadata.fileName = options.fileName
+  // commit('setStatusText', { downloadInfo, text: '链接刷新成功' })
+  if (options?.savePath && options?.fileName) {
+    task.metadata.filePath = nextFilePath
+    dl.updateSaveInfo(options.savePath, options.fileName)
+  }
+  dl.refreshUrl(url, getRequestAgent(url, options?.proxy))
   dl.start().catch(err => {
     sendAction(id, {
       action: 'error',
@@ -247,6 +272,7 @@ export const startTask = async(downloadInfo: LX.Download.ListItem, savePath: str
 
   tasks.set(downloadInfo.id, downloadInfo)
   taskActions.set(downloadInfo.id, callback)
+  taskSkipExistFiles.set(downloadInfo.id, skipExistFile)
   // 检查是否可以开始任务
   // if (!downloadInfo.isComplate && downloadInfo.status != DOWNLOAD_STATUS.RUN) {
   //   const result = getStartTask(downloadList, DOWNLOAD_STATUS, rootState.setting.download.maxDownloadNum)
@@ -284,12 +310,12 @@ export const startTask = async(downloadInfo: LX.Download.ListItem, savePath: str
 
 export const pauseTask = async(id: string) => {
   const dl = dls.get(id)
+  dls.delete(id)
+  tasks.delete(id)
+  taskActions.delete(id)
+  taskSkipExistFiles.delete(id)
+  tryNum.delete(id)
   if (dl) {
-    dls.delete(id)
-    tasks.delete(id)
-    taskActions.delete(id)
-    tryNum.delete(id)
-
     try {
       await dl.stop()
     } catch (e) {
@@ -302,12 +328,12 @@ export const pauseTask = async(id: string) => {
 export const removeTask = async(id: string) => {
   const dl = dls.get(id)
   const downloadInfo = tasks.get(id)
+  dls.delete(id)
+  tasks.delete(id)
+  taskActions.delete(id)
+  taskSkipExistFiles.delete(id)
+  tryNum.delete(id)
   if (dl) {
-    dls.delete(id)
-    tasks.delete(id)
-    taskActions.delete(id)
-    tryNum.delete(id)
-
     try {
       await dl.stop()
     } catch (e) {

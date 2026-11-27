@@ -28,6 +28,7 @@ import { watch, shallowRef } from '@common/utils/vueTools'
 import { historyList } from '@renderer/store/search/state'
 import { getHistoryList, removeHistoryWord, clearHistoryList } from '@renderer/store/search/action'
 import { getList } from '@renderer/store/hotSearch'
+import { getLiveYtmContextKey, isYtmAggregateSearchEnabled } from '@renderer/utils/musicSdk/ytm/runtimeContext'
 import { appSetting } from '@renderer/store/setting'
 import { useRouter } from '@common/utils/vueRouter'
 
@@ -42,22 +43,31 @@ const props = defineProps({
 const hotSearchList = shallowRef([])
 
 if (appSetting['search.isShowHotSearch']) {
-  watch(() => props.visible, (visible) => {
-    if (!visible) return
-    void getList(props.source).then(list => {
-      hotSearchList.value = list
-    })
-  }, {
-    immediate: true,
-  })
-
-  watch(() => props.source, (source) => {
-    if (!props.visible) return
+  let loadSeq = 0
+  const loadHotSearch = (source) => {
+    const seq = ++loadSeq
     void getList(source).then(list => {
-      if (source != props.source) return
+      if (seq !== loadSeq || !props.visible || source != props.source) return
       hotSearchList.value = list
+    }).catch(() => {
+      if (seq !== loadSeq || !props.visible || source != props.source) return
+      hotSearchList.value = []
     })
-  })
+  }
+
+  watch(
+    () => props.visible
+      ? `${props.source}|${(props.source === 'ytm' || props.source === 'all') ? `${isYtmAggregateSearchEnabled() ? 1 : 0}:${getLiveYtmContextKey()}` : ''}`
+      : '',
+    (key) => {
+      if (!key) {
+        loadSeq++
+        return
+      }
+      loadHotSearch(props.source)
+    },
+    { immediate: true },
+  )
 }
 
 if (appSetting['search.isShowHistorySearch']) {

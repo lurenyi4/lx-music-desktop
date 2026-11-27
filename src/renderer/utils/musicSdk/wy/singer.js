@@ -1,14 +1,62 @@
 import { eapiRequest } from './utils/index'
 import { formatPlayTime, sizeFormate } from '../../index'
-import { formatSingerName } from '../utils'
+import { formatSingerName, parseNonEmptyString, parseNonNegativeInt, parseValidCatalogId } from '../utils'
+import { MusicSdkResponseError } from '../responseError'
 
 export default {
+  limit: 20,
+  search(str, page = 1, limit = 20) {
+    const req = eapiRequest('/api/cloudsearch/pc', {
+      s: str,
+      type: 100,
+      limit,
+      offset: limit * (page - 1),
+      total: true,
+    })
+    const promise = req.promise.then(({ body }) => {
+      if (!body || typeof body !== 'object' || body.code !== 200) throw new MusicSdkResponseError()
+      const result = body.result
+      if (!result || typeof result !== 'object' || Array.isArray(result)) throw new MusicSdkResponseError()
+      const total = parseNonNegativeInt(result.artistCount)
+      const rawList = result.artists
+      if (!Array.isArray(rawList)) {
+        if (total === 0 && rawList == null) return { list: [], total: 0, page, limit, source: 'wy' }
+        throw new MusicSdkResponseError()
+      }
+      if (total === null) throw new MusicSdkResponseError()
+      const list = rawList.map(item => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) throw new MusicSdkResponseError()
+        const id = parseValidCatalogId(item.id)
+        const name = parseNonEmptyString(item.name)
+        if (!id || !name) throw new MusicSdkResponseError()
+        const picUrl = typeof item.picUrl === 'string' ? item.picUrl.trim() : ''
+        const fallbackUrl = typeof item.img1v1Url === 'string' ? item.img1v1Url.trim() : ''
+        return {
+          id: typeof item.id === 'number' ? item.id : id,
+          name,
+          img: picUrl || fallbackUrl,
+          songCount: parseNonNegativeInt(item.musicSize),
+          albumCount: parseNonNegativeInt(item.albumSize),
+          source: 'wy',
+        }
+      })
+      return {
+        list,
+        total,
+        page,
+        limit,
+        source: 'wy',
+      }
+    })
+    promise.cancel = () => req.cancelHttp?.()
+    return promise
+  },
   /**
    * 获取歌手信息
    * @param {*} id
    */
   getInfo(id) {
-    return eapiRequest('/api/artist/head/info/get', { id }).then(({ body }) => {
+    return eapiRequest('/api/artist/head/info/get', { id }).promise.then(({ body }) => {
       if (!body || body.code != 200) throw new Error('get singer info faild.')
       return {
         source: 'wy',
@@ -33,13 +81,12 @@ export default {
    * @param {*} limit
    */
   getSongList(id, page = 1, limit = 100) {
-    if (page === 1) page = 0
     return eapiRequest('/api/v2/artist/songs', {
       id,
       limit,
-      offset: limit * page,
-    }).then(({ body }) => {
-      if (!body.songs || body.code != 200) throw new Error('get singer song list faild.')
+      offset: limit * (page - 1),
+    }).promise.then(({ body }) => {
+      if (!body || !Array.isArray(body.songs) || body.code != 200) throw new MusicSdkResponseError()
 
       const list = this.filterSongList(body.songs)
       return {
@@ -58,12 +105,11 @@ export default {
    * @param {*} limit
    */
   getAlbumList(id, page = 1, limit = 10) {
-    if (page === 1) page = 0
-    return eapiRequest(`/api/artist/albums/${id}`, {
+    return eapiRequest(`/api/artist/albums/${encodeURIComponent(id)}`, {
       limit,
-      offset: limit * page,
-    }).then(({ body }) => {
-      if (!body.hotAlbums || body.code != 200) throw new Error('get singer album list faild.')
+      offset: limit * (page - 1),
+    }).promise.then(({ body }) => {
+      if (!body || !Array.isArray(body.hotAlbums) || body.code != 200) throw new MusicSdkResponseError()
 
       const list = this.filterAlbumList(body.hotAlbums)
       return {
@@ -71,7 +117,7 @@ export default {
         list,
         limit,
         page,
-        total: body.artist.albumSize,
+        total: body.artist?.albumSize ?? list.length,
       }
     })
   },
@@ -99,44 +145,38 @@ export default {
 
       const types = []
       const _types = {}
-      let size
-      item.privilege.chargeInfoList.forEach(i => {
+      const addType = (type, size) => {
+        if (_types[type]) return
+        types.push({ type, size })
+        _types[type] = { size }
+      }
+      ;(item.privilege?.chargeInfoList ?? []).forEach(i => {
         switch (i.rate) {
           case 128000:
-            size = item.lMusic ? sizeFormate(item.lMusic.size) : null
-            types.push({ type: '128k', size })
-            _types['128k'] = {
-              size,
-            }
+            addType('128k', item.lMusic ? sizeFormate(item.lMusic.size) : null)
+            break
           case 320000:
-            size = item.hMusic ? sizeFormate(item.hMusic.size) : null
-            types.push({ type: '320k', size })
-            _types['320k'] = {
-              size,
-            }
+            addType('320k', item.hMusic ? sizeFormate(item.hMusic.size) : null)
+            break
           case 999000:
-            size = item.sqMusic ? sizeFormate(item.sqMusic.size) : null
-            types.push({ type: 'flac', size })
-            _types.flac = {
-              size,
-            }
+            addType('flac', item.sqMusic ? sizeFormate(item.sqMusic.size) : null)
+            break
           case 1999000:
-            size = item.hrMusic ? sizeFormate(item.hrMusic.size) : null
-            types.push({ type: 'flac24bit', size })
-            _types.flac24bit = {
-              size,
-            }
+            addType('flac24bit', item.hrMusic ? sizeFormate(item.hrMusic.size) : null)
+            break
         }
       })
 
+      const durationMs = Number(item.duration ?? item.dt)
       list.push({
-        singer: formatSingerName(item.artists),
+        singer: formatSingerName(item.artists ?? item.ar),
+        artists: Array.isArray(item.artists ?? item.ar) ? (item.artists ?? item.ar).map(artist => ({ id: artist.id, name: artist.name })) : undefined,
         name: item.name,
-        albumName: item.album.name,
-        albumId: item.album.id,
+        albumName: (item.album ?? item.al)?.name ?? '',
+        albumId: (item.album ?? item.al)?.id,
         songmid: item.id,
         source: 'wy',
-        interval: formatPlayTime(item.duration),
+        interval: Number.isFinite(durationMs) && durationMs > 0 ? formatPlayTime(durationMs / 1000) : null,
         img: null,
         lrc: null,
         otherSource: null,

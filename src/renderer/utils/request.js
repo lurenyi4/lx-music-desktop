@@ -5,25 +5,31 @@ import { requestMsg } from './message'
 import { bHh } from './musicSdk/options'
 import { deflateRaw } from 'zlib'
 import { proxy } from '@renderer/store'
+import { parseProxyAddress } from '@renderer/core/recommend/ytmProxy'
 import { httpOverHttp, httpsOverHttp } from 'tunnel'
 // import fs from 'fs'
 
 const httpsRxp = /^https:/
-const getRequestAgent = url => {
+const parseValidProxyOverride = (proxyOverride) => {
+  if (!proxyOverride || typeof proxyOverride !== 'object') return null
+  return parseProxyAddress(proxyOverride.host, proxyOverride.port)
+}
+
+const getRequestAgent = (url, proxyOverride) => {
   let options
-  if (proxy.enable && proxy.host) {
+  const validOverride = parseValidProxyOverride(proxyOverride)
+  if (validOverride) {
     options = {
-      proxy: {
-        host: proxy.host,
-        port: proxy.port,
-      },
+      proxy: validOverride,
     }
-  } else if (proxy.envProxy) {
-    options = {
-      proxy: {
-        host: proxy.envProxy.host,
-        port: proxy.envProxy.port,
-      },
+  } else if (proxyOverride !== false) {
+    const validGlobal = proxy.enable ? parseValidProxyOverride(proxy) : null
+    const validEnv = !validGlobal && proxy.envProxy ? parseValidProxyOverride(proxy.envProxy) : null
+    const selected = validGlobal ?? validEnv
+    if (selected) {
+      options = {
+        proxy: selected,
+      }
     }
   }
   return options ? (httpsRxp.test(url) ? httpsOverHttp : httpOverHttp)(options) : undefined
@@ -45,16 +51,43 @@ const request = (url, options, callback) => {
   }
   options.response_timeout = options.timeout
 
-  return needle.request(options.method || 'get', url, data, options, (err, resp, body) => {
-    if (!err) {
-      body = resp.body = resp.raw.toString()
-      try {
-        resp.body = JSON.parse(resp.body)
-      } catch (_) {}
-      body = resp.body
+  const needleOptions = options.compressed
+    ? { ...options, parse_response: false }
+    : options
+
+  // 返回 Needle 顶层请求流对象而非首跳 .request 快照，确保 301/302 重定向后 cancelHttp 仍中止当前活动连接
+  let timedOutType = null
+  const stream = needle.request(options.method || 'get', url, data, needleOptions, (err, resp, body) => {
+    if (err && timedOutType) {
+      const timeoutErr = new Error(requestMsg.timeout)
+      timeoutErr.code = timedOutType === 'response' ? 'ESOCKETTIMEDOUT' : 'ETIMEDOUT'
+      timeoutErr.isTimeout = true
+      err = timeoutErr
+    } else if (!err) {
+      const contentEncoding = String(resp.headers?.['content-encoding'] ?? '').trim().toLowerCase()
+      const isCompressed = Boolean(options.compressed) && contentEncoding !== '' && contentEncoding !== 'identity'
+      if (isCompressed && body !== undefined) {
+        // compressed: true 且关闭 needle 自动解析（parse_response: false），
+        // 仅对解压后的正文执行一次 JSON.parse，避免 JSON 字符串 "123" 被二次解析为数字 123
+        body = Buffer.isBuffer(body) ? body.toString() : String(body)
+        try {
+          body = JSON.parse(body)
+        } catch (_) {}
+        resp.body = body
+      } else {
+        body = resp.body = resp.raw.toString()
+        try {
+          resp.body = JSON.parse(resp.body)
+        } catch (_) {}
+        body = resp.body
+      }
     }
     callback(err, resp, body)
-  }).request
+  })
+  stream?.on?.('timeout', type => {
+    timedOutType = type || 'response'
+  })
+  return stream
 }
 
 
@@ -95,6 +128,10 @@ const buildHttpPromose = (url, options) => {
     }).then(ro => {
       obj.requestObj = ro
       if (obj.isCancelled) obj.cancelHttp()
+    }).catch(err => {
+      obj.requestObj = null
+      obj.cancelFn = null
+      reject(err)
     })
   })
   return obj
@@ -109,16 +146,32 @@ export const httpFetch = (url, options = { method: 'get' }) => {
   const requestObj = buildHttpPromose(url, options)
   requestObj.promise = requestObj.promise.catch(err => {
     // console.log('出错', err)
+    if (err?.isTimeout || /^read timeout$/i.test(err?.message ?? '')) {
+      const wrapped = new Error(requestMsg.timeout)
+      wrapped.code = err.code ?? 'ETIMEDOUT'
+      wrapped.isTimeout = true
+      return Promise.reject(wrapped)
+    }
     if (err.message === 'socket hang up') {
       // window.globalObj.apiSource = 'temp'
-      return Promise.reject(new Error(requestMsg.unachievable))
+      const wrapped = new Error(requestMsg.unachievable)
+      wrapped.code = err.code ?? 'ECONNRESET'
+      wrapped.isReset = true
+      return Promise.reject(wrapped)
     }
     switch (err.code) {
       case 'ETIMEDOUT':
-      case 'ESOCKETTIMEDOUT':
-        return Promise.reject(new Error(requestMsg.timeout))
-      case 'ENOTFOUND':
-        return Promise.reject(new Error(requestMsg.notConnectNetwork))
+      case 'ESOCKETTIMEDOUT': {
+        const wrapped = new Error(requestMsg.timeout)
+        wrapped.code = err.code
+        wrapped.isTimeout = true
+        return Promise.reject(wrapped)
+      }
+      case 'ENOTFOUND': {
+        const wrapped = new Error(requestMsg.notConnectNetwork)
+        wrapped.code = err.code
+        return Promise.reject(wrapped)
+      }
       default:
         return Promise.reject(err)
     }
@@ -134,8 +187,15 @@ export const cancelHttp = requestObj => {
   // console.log(requestObj)
   if (!requestObj) return
   // console.log('cancel:', requestObj)
-  if (!requestObj.abort) return
-  requestObj.abort()
+  try {
+    if (typeof requestObj.request?.abort === 'function') requestObj.request.abort()
+  } catch {}
+  try {
+    if (typeof requestObj.abort === 'function') requestObj.abort()
+  } catch {}
+  try {
+    if (typeof requestObj.destroy === 'function') requestObj.destroy()
+  } catch {}
 }
 
 
@@ -280,6 +340,7 @@ const fetchData = async(url, method, {
   headers = {},
   format = 'json',
   timeout = 15000,
+  proxy: proxyOverride,
   ...options
 }, callback) => {
   // console.log(url, options)
@@ -300,7 +361,7 @@ const fetchData = async(url, method, {
     method,
     headers: Object.assign({}, defaultHeaders, headers),
     timeout,
-    agent: getRequestAgent(url),
+    agent: getRequestAgent(url, proxyOverride),
     json: format === 'json',
   }, (err, resp, body) => {
     if (err) return callback(err, null)

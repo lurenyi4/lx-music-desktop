@@ -1,3 +1,6 @@
 const { copyLib } = require('./deps')
 
-copyLib()
+copyLib().catch(error => {
+  console.error(error)
+  process.exitCode = 1
+})

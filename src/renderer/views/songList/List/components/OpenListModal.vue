@@ -40,6 +40,9 @@ import { setOpenSongListInputInfo } from '@renderer/store/songList/action'
 import { ref, watch } from '@common/utils/vueTools'
 import { useRoute, useRouter } from '@common/utils/vueRouter'
 import { openUrl } from '@common/utils/electron'
+import { parseSongListUrl, isUnsupportedYtmPlaylistUrl } from '@renderer/utils/songListUrl'
+import { dialog } from '@renderer/plugins/Dialog'
+import { normalizeYtmPlaylistId } from '@renderer/utils/musicSdk/ytm/parser'
 
 const props = defineProps({
   modelValue: Boolean,
@@ -62,14 +65,36 @@ watch(() => props.modelValue, (visible) => {
   // text.value = openSongListInputInfo.text
 })
 
+watch(text, (value) => {
+  if (!value) return
+  const parsed = parseSongListUrl(value)
+  if (parsed) source.value = parsed.source
+})
+
 const handleSubmit = () => {
   if (!text.value.length) return
-  setOpenSongListInputInfo(text.value, source.value)
+  const parsed = parseSongListUrl(text.value)
+  if (!parsed && isUnsupportedYtmPlaylistUrl(text.value, source.value === 'ytm')) {
+    void dialog({ message: window.i18n.t('songlist__import_ytm_unsupported_mix') })
+    return
+  }
+  const targetSource = parsed ? parsed.source : source.value
+  let targetId = parsed && !text.value.includes('###') ? parsed.id : text.value
+  if (targetSource === 'ytm') {
+    const canonical = normalizeYtmPlaylistId(targetId)
+    if (!canonical) {
+      void dialog({ message: window.i18n.t('songlist__import_ytm_unsupported_mix') })
+      return
+    }
+    targetId = canonical
+  }
+  setOpenSongListInputInfo(text.value, targetSource)
   void router.push({
     path: '/songList/detail',
     query: {
-      source: source.value,
-      id: text.value,
+      source: targetSource,
+      // 含 ###token 的输入保持原文提交（网易“我喜欢”歌单流程），由 SDK 拆分解析并保留 token
+      id: targetId,
       refresh: 'true',
     },
   })

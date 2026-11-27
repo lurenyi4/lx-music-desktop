@@ -128,6 +128,7 @@ export default {
       }
       return {
         singer: formatSingerName(item.authors, 'author_name'),
+        artists: Array.isArray(item.authors) ? item.authors.map(artist => ({ id: artist.author_id, name: decodeName(artist.author_name) })) : undefined,
         name: decodeName(item.songname),
         albumName: decodeName(item.remark),
         albumId: item.album_id,

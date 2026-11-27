@@ -1,5 +1,6 @@
 import { toRaw } from '@common/utils/vueTools'
 import { rendererInvoke, rendererOff, rendererOn } from '@common/rendererIpc'
+import { unwrapMusicInfo, unwrapMusicInfos } from './rawUnwrap'
 import { PLAYER_EVENT_NAME } from '@common/ipcNames'
 import {
   userListCreate,
@@ -78,6 +79,7 @@ export const getListMusics = async(listId: string | null): Promise<LX.Music.Musi
  * @param data
  */
 export const addListMusics = async(data: LX.List.ListActionMusicAdd) => {
+  data.musicInfos = unwrapMusicInfos(data.musicInfos)
   await rendererInvoke<LX.List.ListActionMusicAdd>(PLAYER_EVENT_NAME.list_music_add, data)
 }
 
@@ -86,6 +88,7 @@ export const addListMusics = async(data: LX.List.ListActionMusicAdd) => {
  * @param data
  */
 export const moveListMusics = async(data: LX.List.ListActionMusicMove) => {
+  data.musicInfos = unwrapMusicInfos(data.musicInfos)
   await rendererInvoke<LX.List.ListActionMusicMove>(PLAYER_EVENT_NAME.list_music_move, data)
 }
 
@@ -102,7 +105,11 @@ export const removeListMusics = async(data: LX.List.ListActionMusicRemove) => {
  * @param data
  */
 export const updateListMusics = async(data: LX.List.ListActionMusicUpdate) => {
-  await rendererInvoke<LX.List.ListActionMusicUpdate>(PLAYER_EVENT_NAME.list_music_update, data)
+  const payload = data.map(item => ({
+    ...toRaw(item),
+    musicInfo: unwrapMusicInfo(item.musicInfo),
+  }))
+  await rendererInvoke<LX.List.ListActionMusicUpdate>(PLAYER_EVENT_NAME.list_music_update, payload)
 }
 
 /**
@@ -118,6 +125,7 @@ export const updateListMusicsPosition = async(data: LX.List.ListActionMusicUpdat
  * @param data
  */
 export const overwriteListMusics = async(data: LX.List.ListActionMusicOverwrite) => {
+  data.musicInfos = unwrapMusicInfos(data.musicInfos)
   await rendererInvoke<LX.List.ListActionMusicOverwrite>(PLAYER_EVENT_NAME.list_music_overwrite, data)
 }
 
@@ -134,15 +142,15 @@ export const clearListMusics = async(ids: LX.List.ListActionMusicClear) => {
  * @param data
  */
 export const overwriteListFull = async(data: LX.List.ListActionDataOverwrite) => {
-  data.defaultList = toRaw(data.defaultList)
-  data.loveList = toRaw(data.loveList)
+  data.defaultList = unwrapMusicInfos(data.defaultList)
+  data.loveList = unwrapMusicInfos(data.loveList)
   if (data.tempList) {
-    data.tempList = toRaw(data.tempList)
+    data.tempList = unwrapMusicInfos(data.tempList)
   }
   data.userList = data.userList.map(info => {
     return {
-      ...info,
-      list: toRaw(info.list),
+      ...toRaw(info),
+      list: unwrapMusicInfos(info.list),
     }
   })
 

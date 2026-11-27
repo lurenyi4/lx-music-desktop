@@ -1,0 +1,26 @@
+import { beforeEach, expect, it, vi } from 'vitest'
+import useList from './useList'
+const mocks = vi.hoisted(() => ({ sign: vi.fn() }))
+vi.mock('@renderer/utils/musicSdk/tx/utils', () => ({ signRequest: mocks.sign }))
+vi.mock('@renderer/utils/musicSdk', async() => ({ default: { sources: [{ id: 'tx' }], tx: { musicSearch: (await import('@renderer/utils/musicSdk/tx/musicSearch')).default } } }))
+vi.mock('@renderer/core/player/action', () => ({ playList: vi.fn() }))
+vi.mock('@renderer/store/list/action', () => ({ getListMusics: vi.fn(), addListMusics: vi.fn() }))
+vi.mock('@renderer/store/search/action', () => ({ addHistoryWord: async() => {} }))
+vi.mock('@renderer/core/music/sourceCapabilities', () => ({ assertPlaybackSupport: () => true }))
+vi.mock('@renderer/utils', () => ({ deduplicationList: (list: unknown[]) => list, toNewMusicInfo: (song: unknown) => song, formatPlayTime: String, sizeFormate: String }))
+beforeEach(() => {
+  vi.clearAllMocks()
+  vi.stubGlobal('window', { i18n: { t: (key: string) => key } })
+})
+it('real QQ refusal is contained through the real search store and view hook with a retryable error', async() => {
+  const view = useList()
+  await view.search('', 'tx', 1)
+  mocks.sign.mockResolvedValueOnce({ body: { code: 0, req: { code: 1000 } } })
+  await expect(view.search('query', 'tx', 1)).resolves.toBeUndefined()
+  expect(view.listInfo.value.error).toBe('list__load_failed')
+  expect(mocks.sign).toHaveBeenCalledOnce()
+  mocks.sign.mockResolvedValueOnce({ body: { code: 0, req: { code: 0, data: { body: { song: { list: [] } }, meta: { sum: 0 } } } } })
+  await view.search('query', 'tx', 1)
+  expect(view.listInfo.value.error).toBe('')
+  expect(view.listInfo.value.noItemLabel).toBe('no_item')
+})

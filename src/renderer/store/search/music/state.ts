@@ -11,6 +11,7 @@ export declare interface ListInfo {
   limit: number
   key: string | null
   noItemLabel: string
+  error?: string
 }
 
 interface ListInfos extends Partial<Record<LX.OnlineSource, ListInfo>> {

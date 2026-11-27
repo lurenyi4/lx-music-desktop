@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.playback-tests.json",
+  "include": [
+    "../src/renderer/core/music/coverOwnership.test.ts",
+    "../src/renderer/core/player/recommendPlayback.test.ts",
+    "../src/renderer/core/player/selectionEntrypoints.test.ts",
+    "../src/renderer/views/List/MusicList/useMusicToggle.test.ts",
+    "../src/renderer/views/List/MusicList/components/MusicToggleModal.test.ts",
+    "../src/common/types/**/*.d.ts",
+    "../src/renderer/types/**/*.d.ts"
+  ]
+}

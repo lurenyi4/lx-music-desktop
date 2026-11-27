@@ -1,4 +1,5 @@
 import qs from 'node:querystring'
+import { formatProxyHost, parseProxyAddress } from './proxyAddress'
 import {
   FormData,
   getGlobalDispatcher,
@@ -25,12 +26,30 @@ const buildDispatcher = () => {
 setGlobalDispatcher(buildDispatcher())
 
 export const setProxy = (url?: string) => {
-  proxyAgent = url ? new ProxyAgent(url) : null
+  const previous = proxyAgent
+  let nextAgent: ProxyAgent | null = null
+  if (url) {
+    try {
+      nextAgent = new ProxyAgent(url)
+    } catch (err) {
+      console.warn('[request_node16] ignore invalid proxy url:', err)
+    }
+  }
+  proxyAgent = nextAgent
   setGlobalDispatcher(buildDispatcher())
+  if (previous) void previous.close().catch(() => {})
 }
 export const setProxyByHost = (host?: string, port?: string) => {
-  console.log(host)
-  setProxy(host ? `http://${host}:${port}` : undefined)
+  if (!host) {
+    setProxy(undefined)
+    return
+  }
+  const parsed = parseProxyAddress(host, port) ?? (!String(port ?? '').trim() ? parseProxyAddress(host, 80) : null)
+  if (!parsed) {
+    setProxy(undefined)
+    return
+  }
+  setProxy(`http://${formatProxyHost(parsed.host)}:${parsed.port}`)
 }
 const CONTENT_TYPE = {
   json: 'application/json',

@@ -1,3 +1,4 @@
+import { updateQueueSessionMusic } from '@renderer/store/player/queueSession'
 import { markRaw, markRawList, toRaw } from '@common/utils/vueTools'
 import {
   allMusicList,
@@ -42,6 +43,9 @@ const createUserList = ({
   source,
   sourceListId,
   locationUpdateTime,
+  cover,
+  desc,
+  author,
 }: LX.List.UserListInfo, position: number) => {
   if (position < 0 || position >= userLists.length) {
     userLists.push({
@@ -50,6 +54,9 @@ const createUserList = ({
       source,
       sourceListId,
       locationUpdateTime,
+      cover,
+      desc,
+      author,
     })
   } else {
     userLists.splice(position, 0, {
@@ -58,6 +65,9 @@ const createUserList = ({
       source,
       sourceListId,
       locationUpdateTime,
+      cover,
+      desc,
+      author,
     })
   }
 }
@@ -69,6 +79,9 @@ const updateList = ({
   sourceListId,
   meta,
   locationUpdateTime,
+  cover,
+  desc,
+  author,
 }: LX.List.UserListInfo & { meta?: { id?: string } }) => {
   let targetList
   switch (id) {
@@ -85,6 +98,10 @@ const updateList = ({
       targetList.source = source
       targetList.sourceListId = sourceListId
       targetList.locationUpdateTime = locationUpdateTime
+      // 与 main 侧 COALESCE 语义一致：未提供时保留原值
+      if (cover != null) targetList.cover = cover
+      if (desc != null) targetList.desc = desc
+      if (author != null) targetList.author = author
       break
   }
 }
@@ -143,13 +160,16 @@ export const listDataOverwrite = ({ defaultList, loveList, userList, tempList }:
   return updatedListIds
 }
 
-export const userListCreate = ({ name, id, source, sourceListId, position, locationUpdateTime }: {
+export const userListCreate = ({ name, id, source, sourceListId, position, locationUpdateTime, cover, desc, author }: {
   name: string
   id: string
   source?: LX.OnlineSource
   sourceListId?: string
   position: number
   locationUpdateTime: number | null
+  cover?: string | null
+  desc?: string | null
+  author?: string | null
 }) => {
   if (userLists.some(item => item.id == id)) return
   const newList: LX.List.UserListInfo = {
@@ -158,6 +178,9 @@ export const userListCreate = ({ name, id, source, sourceListId, position, locat
     source,
     sourceListId,
     locationUpdateTime,
+    cover,
+    desc,
+    author,
   }
   createUserList(newList, position)
 }
@@ -223,7 +246,13 @@ export const listMusicClear = (ids: string[]): string[] => {
 
 export const listMusicAdd = (id: string, musicInfos: LX.Music.MusicInfo[], addMusicLocationType: LX.AddMusicLocationType): string[] => {
   const targetList = allMusicList.get(id)
-  if (!targetList) return id == loveList.id ? [id] : []
+  if (!targetList) {
+    // TP-2 画像收藏捕获点（D10/D13 补裁）：allMusicList 懒加载（getListMusics 才填充），列表未进过内存时
+    // 此早退会让收藏信号永久丢失——按原始入参发射（此刻无列表无法去重），重复收藏/取消后再收藏的幂等
+    // 下沉到 profile-core.reduceProfileSignal 的同曲 love 去重兜底；早退返回值等运行语义不变
+    if (id == loveList.id && musicInfos.length) window.app_event.loveListMusicsAdded(musicInfos)
+    return id == loveList.id ? [id] : []
+  }
 
   const listSet = new Set<string>()
   for (const item of targetList) listSet.add(item.id)
@@ -242,6 +271,11 @@ export const listMusicAdd = (id: string, musicInfos: LX.Music.MusicInfo[], addMu
       arrPush(targetList, musicInfos)
       break
   }
+
+  // TP-2 画像收藏捕获点（D10/D13）：仅去重过滤后仍有实际新增时经 app_event 桥通知（零 import 边）；
+  // listMusicMove 委托本函数故 move-into-love 自动覆盖，sync 远端合入同走本函数计入；
+  // 整单恢复/迁移经 overwriteMusicList 不经由本函数，不产生信号
+  if (id == loveList.id && musicInfos.length) window.app_event.loveListMusicsAdded(musicInfos)
 
   return [id]
 }
@@ -281,6 +315,7 @@ export const listMusicUpdateInfo = (musicInfos: LX.List.ListActionMusicUpdate): 
       meta: musicInfo.meta,
     })
     targetList.splice(index, 1, markRaw(info))
+    updateQueueSessionMusic(id, info)
     updateListIds.add(id)
   }
   return Array.from(updateListIds)

@@ -16,7 +16,9 @@ export default {
   // cancelFn: null,
   musicSearch(str, page, limit) {
     const musicSearchRequestObj = httpFetch(`http://search.kuwo.cn/r.s?client=kt&all=${encodeURIComponent(str)}&pn=${page - 1}&rn=${limit}&uid=794762570&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newver=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1&issubtitle=1`)
-    return musicSearchRequestObj.promise
+    const promise = musicSearchRequestObj.promise
+    promise.cancel = () => musicSearchRequestObj.cancelHttp?.()
+    return promise
   },
   // getImg(songId) {
   //   return httpGet(`http://player.kuwo.cn/webmusic/sj/dtflagdate?flag=6&rid=MUSIC_${songId}`)
@@ -77,9 +79,13 @@ export default {
 
       let interval = parseInt(info.DURATION)
 
+      const singerName = formatSinger(decodeName(info.ARTIST))
+      const artistId = String(info.ARTISTID ?? '').trim()
+
       result.push({
         name: decodeName(info.SONGNAME),
-        singer: formatSinger(decodeName(info.ARTIST)),
+        singer: singerName,
+        artists: artistId && artistId !== '0' && singerName && !singerName.includes('、') ? [{ id: artistId, name: singerName }] : undefined,
         source: 'kw',
         // img = (info.album.name === '' || info.album.name === '空')
         //   ? `http://player.kuwo.cn/webmusic/sj/dtflagdate?flag=6&rid=MUSIC_160911.jpg`
@@ -99,16 +105,20 @@ export default {
     // console.log(result)
     return result
   },
-  search(str, page = 1, limit, retryNum = 0) {
+  search(str, page = 1, limit, retryNum = 0, cancelState = { cancelled: false, request: null }) {
+    if (cancelState.cancelled) return Promise.reject(new Error('request cancelled'))
     if (retryNum > 2) return Promise.reject(new Error('try max num'))
     if (limit == null) limit = this.limit
     // http://newlyric.kuwo.cn/newlyric.lrc?62355680
-    return this.musicSearch(str, page, limit).then(({ body: result }) => {
+    const request = this.musicSearch(str, page, limit)
+    cancelState.request = request
+    const promise = request.then(({ body: result }) => {
+      if (cancelState.cancelled) throw new Error('request cancelled')
       // console.log(result)
-      if (!result || (result.TOTAL !== '0' && result.SHOW === '0')) return this.search(str, page, limit, ++retryNum)
+      if (!result || (result.TOTAL !== '0' && result.SHOW === '0')) return this.search(str, page, limit, ++retryNum, cancelState)
       let list = this.handleResult(result.abslist)
 
-      if (list == null) return this.search(str, page, limit, ++retryNum)
+      if (list == null) return this.search(str, page, limit, ++retryNum, cancelState)
 
       this.total = parseInt(result.TOTAL)
       this.page = page
@@ -122,5 +132,10 @@ export default {
         source: 'kw',
       })
     })
+    promise.cancel = () => {
+      cancelState.cancelled = true
+      cancelState.request?.cancel?.()
+    }
+    return promise
   },
 }

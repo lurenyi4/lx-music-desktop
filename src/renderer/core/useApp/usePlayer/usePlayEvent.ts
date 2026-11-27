@@ -2,7 +2,7 @@ import { onBeforeUnmount } from '@common/utils/vueTools'
 import { useI18n } from '@renderer/plugins/i18n'
 import { musicInfo, playMusicInfo } from '@renderer/store/player/state'
 import { setStop, isEmpty } from '@renderer/plugins/player'
-import { playNext, setMusicUrl } from '@renderer/core/player'
+import { playNext, setMusicUrl, capturePlaybackOwner } from '@renderer/core/player'
 import { setAllStatus } from '@renderer/store/player/action'
 import { appSetting } from '@renderer/store/setting'
 
@@ -16,7 +16,10 @@ export default () => {
   const startLoadingTimeout = () => {
     // console.log('start load timeout')
     clearLoadingTimeout()
+    const ownsPlayback = capturePlaybackOwner()
     loadingTimeout = setTimeout(() => {
+      loadingTimeout = null
+      if (!ownsPlayback()) return
       if (window.lx.isPlayedStop) {
         prevTimeoutId = null
         setAllStatus('')
@@ -26,7 +29,7 @@ export default () => {
       // 如果加载超时，则尝试刷新URL
       if (prevTimeoutId == musicInfo.id) {
         prevTimeoutId = null
-        void playNext(true)
+        void playNext(true, 'error')
       } else {
         prevTimeoutId = musicInfo.id
         if (playMusicInfo.musicInfo) setMusicUrl(playMusicInfo.musicInfo, true)
@@ -48,13 +51,21 @@ export default () => {
   }
   const addDelayNextTimeout = () => {
     clearDelayNextTimeout()
+    const ownsPlayback = capturePlaybackOwner()
+    // Track both registration and execution so media cleanup can cancel either phase.
     delayNextTimeout = setTimeout(() => {
-      if (window.lx.isPlayedStop) {
-        setAllStatus('')
-        return
-      }
-      void playNext(true)
-    }, 5000)
+      delayNextTimeout = null
+      if (!ownsPlayback()) return
+      delayNextTimeout = setTimeout(() => {
+        delayNextTimeout = null
+        if (!ownsPlayback()) return
+        if (window.lx.isPlayedStop) {
+          setAllStatus('')
+          return
+        }
+        void playNext(true, 'error')
+      }, 5000)
+    })
   }
 
   const handleLoadstart = () => {
@@ -68,12 +79,19 @@ export default () => {
   }
 
   const handlePlaying = () => {
+    clearDelayNextTimeout()
     setAllStatus('')
     clearLoadingTimeout()
   }
 
-  const handleEmpied = () => {
+  const clearMediaTimeouts = () => {
     clearDelayNextTimeout()
+    clearLoadingTimeout()
+  }
+  const handleEmpied = () => {
+    // An error's own setStop also emits emptied; it must not cancel that error's skip.
+    // A replacement resource or playback-owner change cancels it through cleanup/owner guards.
+    if (!isEmpty()) clearDelayNextTimeout()
     clearLoadingTimeout()
   }
 
@@ -97,10 +115,10 @@ export default () => {
     if (appSetting['player.autoSkipOnError']) {
       if (document.hidden) {
         console.warn('error skip to next')
-        void playNext(true)
+        void playNext(true, 'error')
       } else {
         setAllStatus(t('player__error'))
-        setTimeout(addDelayNextTimeout)
+        addDelayNextTimeout()
       }
     }
   }
@@ -125,8 +143,10 @@ export default () => {
   window.app_event.on('playerEmptied', handleEmpied)
   window.app_event.on('playerError', handleError)
   window.app_event.on('musicToggled', handleSetPlayInfo)
+  window.app_event.on('stop', clearMediaTimeouts)
 
   onBeforeUnmount(() => {
+    clearMediaTimeouts()
     window.app_event.off('playerLoadstart', handleLoadstart)
     window.app_event.off('playerLoadeddata', handleLoadeddata)
     window.app_event.off('playerPlaying', handlePlaying)
@@ -134,5 +154,6 @@ export default () => {
     window.app_event.off('playerEmptied', handleEmpied)
     window.app_event.off('playerError', handleError)
     window.app_event.off('musicToggled', handleSetPlayInfo)
+    window.app_event.off('stop', clearMediaTimeouts)
   })
 }

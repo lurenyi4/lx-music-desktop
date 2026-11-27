@@ -144,6 +144,7 @@ export default {
       showModal: false,
       showContent: false,
       modalCount: false,
+      isModalCounted: false,
       isAddedClass: false,
       // ai: 0,
     }
@@ -172,6 +173,10 @@ export default {
     this.setRandomAnimation()
   },
   beforeUnmount() {
+    if (this.isModalCounted) {
+      this.isModalCounted = false
+      if (modalCount > 0) modalCount--
+    }
     this.removeClass()
   },
   methods: {
@@ -182,9 +187,14 @@ export default {
         //   // dom.t
         // }
         this.setRandomAnimation()
-        this.modalCount = ++modalCount
+        if (!this.isModalCounted) {
+          this.isModalCounted = true
+          this.modalCount = ++modalCount
+        }
         this.showModal = true
         void nextTick(() => {
+          if (!this.show) this.showModal = false
+          if (!this.show || !this.$refs.dom_container) return
           const node = this.$refs.dom_container.parentNode
           if (!node.classList.contains('show-modal')) {
             node.classList.add('show-modal')
@@ -193,14 +203,18 @@ export default {
           this.showContent = true
         })
       } else {
-        if (modalCount > 0) this.modalCount = --modalCount
+        if (this.isModalCounted) {
+          this.isModalCounted = false
+          if (modalCount > 0) this.modalCount = --modalCount
+        }
         this.removeClass()
         this.showContent = false
       }
     },
     removeClass() {
       if (!this.isAddedClass) return
-      this.$refs.dom_container?.parentNode.classList.remove('show-modal')
+      this.$refs.dom_container?.parentNode?.classList.remove('show-modal')
+      this.isAddedClass = false
     },
     setRandomAnimation() {
       if (appSetting['common.randomAnimate']) {
@@ -219,7 +233,7 @@ export default {
     },
     handleAfterLeave(event) {
       this.$emit('after-leave', event)
-      this.showModal = false
+      if (!this.show) this.showModal = false
     },
   },
 }
@@ -252,30 +266,18 @@ export default {
   // will-change: transform;
 
   &.filter {
-    backdrop-filter: grayscale(70%);
+    backdrop-filter: blur(8px) saturate(1.1);
+    background-color: rgba(0, 0, 0, 0.24);
   }
-
-  // &:before {
-  //   .mixin-after();
-  //   position: absolute;
-  //   left: 0;
-  //   top: 0;
-  //   width: 100%;
-  //   height: 100%;
-  //   background-color: var(--color-000);
-  //   opacity: .6;
-  // }
 }
 
 .content {
   position: relative;
-  border-radius: 4px;
-  box-shadow: 0 0 4px rgba(0, 0, 0, .25);
+  border-radius: var(--ui-radius-lg);
+  border: 1px solid var(--ui-border-subtle);
+  box-shadow: var(--ui-shadow-lg);
   overflow: hidden;
-  // max-height: 80%;
-  // max-width: 76%;
-  min-width: 220px;
-  position: relative;
+  min-width: 240px;
   display: flex;
   flex-flow: column nowrap;
   z-index: 100;
@@ -284,31 +286,43 @@ export default {
 
 .header {
   flex: none;
-  background-color: var(--color-primary-light-100-alpha-100);
+  background-color: transparent;
+  border-bottom: 1px solid var(--ui-border-subtle);
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  height: 18px;
+  height: 30px;
+  padding: 0 6px;
+  box-sizing: border-box;
 
   button {
     border: none;
     cursor: pointer;
-    padding: 4px 7px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    padding: 5px;
+    box-sizing: border-box;
     background-color: transparent;
-    color: var(--color-primary-dark-500-alpha-500);
+    color: var(--color-font-label);
     outline: none;
-    transition: background-color 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color @transition-fast, color @transition-fast;
     line-height: 0;
 
     svg {
-      height: .7em;
+      height: 10px;
+      width: 10px;
     }
 
     &:hover {
-      background-color: var(--color-primary-dark-100-alpha-600);
+      background-color: var(--ui-surface-hover);
+      color: var(--color-font);
     }
     &:active {
-      background-color: var(--color-primary-dark-200-alpha-600);
+      background-color: var(--ui-surface-active);
     }
   }
 }

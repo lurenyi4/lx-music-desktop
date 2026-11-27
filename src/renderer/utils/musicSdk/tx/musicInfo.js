@@ -77,6 +77,7 @@ export default (songmid) => {
     }
     return {
       singer: getSinger(item.singer),
+      artists: item.singer?.map(artist => ({ id: artist.mid, name: artist.name })),
       name: item.title,
       albumName,
       albumId,

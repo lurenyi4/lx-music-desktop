@@ -1,12 +1,19 @@
 <template>
   <div :class="$style.container">
+    <div v-if="listInfo.error" :class="$style.error" role="alert">
+      <span>{{ listInfo.error }}</span>
+      <base-btn min @click="search(searchText, props.sourceId, props.page || 1)">{{ $t('retry') }}</base-btn>
+    </div>
+    <div :class="$style.results">
     <SongList ref="listRef" :list-info="listInfo" :visible-source="sourceId == 'all'" @toggle-page="togglePage" />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { watch } from '@common/utils/vueTools'
+import { onBeforeUnmount, watch } from '@common/utils/vueTools'
 import { searchText } from '@renderer/store/search/state'
+import { cancelSearch } from '@renderer/store/search/songlist'
 import { useRouter, useRoute } from '@common/utils/vueRouter'
 import useList, { type SearchSource } from './useList'
 import SongList from '@renderer/views/songList/List/components/SongList.vue'
@@ -26,17 +33,37 @@ const {
   search,
 } = useList()
 
+let pendingTimer: ReturnType<typeof setTimeout> | null = null
+let activeSource: SearchSource = props.sourceId
+const clearPendingTimer = () => {
+  if (pendingTimer != null) {
+    clearTimeout(pendingTimer)
+    pendingTimer = null
+  }
+}
+const scheduleSearch = (text: string, sourceId: SearchSource, page: number) => {
+  clearPendingTimer()
+  if (activeSource !== sourceId) {
+    cancelSearch(activeSource)
+    activeSource = sourceId
+  }
+  pendingTimer = setTimeout(() => {
+    pendingTimer = null
+    void search(text, sourceId, page || 1)
+  })
+}
+
 watch(() => [props.sourceId, props.page], ([sourceId, page]) => {
-  setTimeout(() => {
-    search(searchText.value, sourceId as SearchSource, page as number || 1)
-  })
+  scheduleSearch(searchText.value, sourceId as SearchSource, (page as number) || 1)
 })
-watch(searchText, (searchText) => {
-  setTimeout(() => {
-    search(searchText, props.sourceId, props.page)
-  })
+watch(searchText, (text) => {
+  scheduleSearch(text, props.sourceId, props.page)
 }, {
   immediate: true,
+})
+onBeforeUnmount(() => {
+  clearPendingTimer()
+  cancelSearch(activeSource)
 })
 
 const togglePage = (page: number) => {
@@ -56,6 +83,8 @@ const togglePage = (page: number) => {
 
 <style lang="less" module>
 .container {
+  display: flex;
+  flex-direction: column;
   position: absolute;
   left: 0;
   top: 0;
@@ -70,4 +99,18 @@ const togglePage = (page: number) => {
 //   flex: auto;
 // }
 
+.results {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+}
+.error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 20px;
+  flex: none;
+  font-size: 12.5px;
+  color: var(--color-font-label);
+}
 </style>

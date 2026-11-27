@@ -1,7 +1,44 @@
 import { httpFetch } from '../../request'
 
 import { formatPlayTime, sizeFormate } from '../../index'
-import { formatSingerName } from '../utils'
+import { formatSingerName, parseNonEmptyString, parseNonNegativeInt } from '../utils'
+import { MusicSdkResponseError } from '../responseError'
+import { buildSearchComm, getTxSearchId } from './musicSearch'
+import { signRequest } from './utils'
+
+export const normalizeTxImageUrl = url => {
+  if (typeof url !== 'string') return ''
+  const clean = url.trim()
+  if (!clean) return ''
+  return clean.replace(/^http:\/\//i, 'https://')
+}
+
+export const searchTxByType = (str, page, limit, searchType) => {
+  const req = signRequest({
+    comm: buildSearchComm(),
+    'music.search.SearchCgiService': {
+      module: 'music.search.SearchCgiService',
+      method: 'DoSearchForQQMusicDesktop',
+      param: {
+        grp: 1,
+        num_per_page: limit,
+        page_num: page,
+        query: str,
+        remoteplace: 'txt.newclient.top',
+        search_type: searchType,
+        searchid: getTxSearchId(),
+      },
+    },
+  })
+  const promise = req.then(({ body }) => {
+    const res = body?.['music.search.SearchCgiService'] ?? body?.req
+    if (!res || typeof body?.code !== 'number' || typeof res.code !== 'number') throw new MusicSdkResponseError()
+    if (body.code !== 0 || res.code !== 0) throw new Error('搜索失败')
+    return res.data
+  })
+  promise.cancel = () => req.cancel?.()
+  return promise
+}
 
 export const filterMusicInfoItem = item => {
   const types = []
@@ -35,12 +72,14 @@ export const filterMusicInfoItem = item => {
     }
   }
 
-  const albumId = item.album.id ?? ''
-  const albumMid = item.album.mid ?? ''
-  const albumName = item.album.name ?? ''
+  const albumId = item.album?.id ?? ''
+  const albumMid = item.album?.mid ?? ''
+  const albumName = item.album?.name ?? ''
+  const hasAlbumCover = Boolean(albumMid) && albumId !== '' && albumId !== 0 && albumId !== '0' && albumId !== '空'
   return {
     source: 'tx',
     singer: formatSingerName(item.singer, 'name'),
+    artists: item.singer?.map(artist => ({ id: artist.mid, name: artist.name })),
     name: item.title,
     albumName,
     albumId,
@@ -49,7 +88,7 @@ export const filterMusicInfoItem = item => {
     songId: item.id,
     songmid: item.mid,
     strMediaMid: item.file.media_mid,
-    img: (albumId === '' || albumId === '空')
+    img: !hasAlbumCover
       ? item.singer?.length ? `https://y.gtimg.cn/music/photo_new/T001R500x500M000${item.singer[0].mid}.jpg` : ''
       : `https://y.gtimg.cn/music/photo_new/T002R500x500M000${albumMid}.jpg`,
     types,
@@ -65,7 +104,7 @@ export const filterMusicInfoItem = item => {
  * @param {*} options
  * @param {*} retryNum
  */
-const createMusicuFetch = async(data, options, retryNum = 0) => {
+export const createMusicuFetch = async(data, options, retryNum = 0) => {
   if (retryNum > 2) throw new Error('try max num')
 
   let result
@@ -84,19 +123,66 @@ const createMusicuFetch = async(data, options, retryNum = 0) => {
         ...data,
       },
       headers: {
-        'User-Angent': 'Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; WOW64; Trident/5.0)',
+        'User-Agent': 'Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; WOW64; Trident/5.0)',
       },
     }).promise
   } catch (err) {
     console.log(err)
     return createMusicuFetch(data, options, ++retryNum)
   }
-  if (result.statusCode !== 200 || result.body.code != 0) return createMusicuFetch(data, options, ++retryNum)
+  if (result.statusCode !== 200 || !result.body || typeof result.body !== 'object' || result.body.code != 0) {
+    return createMusicuFetch(data, options, ++retryNum)
+  }
 
   return result.body
 }
 
 export default {
+  limit: 20,
+  search(str, page = 1, limit = 20) {
+    const req = searchTxByType(str, page, limit, 1)
+    const promise = req.then(data => {
+      if (!data || typeof data !== 'object' || Array.isArray(data)) throw new MusicSdkResponseError()
+      if (data.body != null && (typeof data.body !== 'object' || Array.isArray(data.body))) throw new MusicSdkResponseError()
+      if (data.body?.singer != null && (typeof data.body.singer !== 'object' || Array.isArray(data.body.singer))) throw new MusicSdkResponseError()
+      const rawList = data.body?.singer?.list
+      const total = parseNonNegativeInt(data.meta?.sum)
+      if (total === null) throw new MusicSdkResponseError()
+      if (!Array.isArray(rawList)) {
+        if (total === 0 && rawList == null) return { list: [], total: 0, page, limit, source: 'tx' }
+        throw new MusicSdkResponseError()
+      }
+      const list = []
+      for (const item of rawList) {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) throw new MusicSdkResponseError()
+        if (item.singerMID != null && typeof item.singerMID !== 'string') throw new MusicSdkResponseError()
+        const name = parseNonEmptyString(item.singerName)
+        if (!name) throw new MusicSdkResponseError()
+        // QQ 音乐 GetSingerSongList 仅接受 string singerMid，不能回退到数字 singerID
+        const mid = parseNonEmptyString(item.singerMID)
+        if (!mid || mid === '0') continue
+        const img = normalizeTxImageUrl(item.singerPic) || `https://y.gtimg.cn/music/photo_new/T001R300x300M000${mid}.jpg`
+        list.push({
+          id: mid,
+          name,
+          img,
+          songCount: parseNonNegativeInt(item.songNum),
+          albumCount: parseNonNegativeInt(item.albumNum),
+          source: 'tx',
+        })
+      }
+      if (rawList.length > 0 && list.length === 0) throw new MusicSdkResponseError()
+      return {
+        list,
+        total,
+        page,
+        limit,
+        source: 'tx',
+      }
+    })
+    promise.cancel = () => req.cancel?.()
+    return promise
+  },
   /**
    * 获取歌手信息
    * @param {*} id
@@ -138,11 +224,12 @@ export default {
         },
       },
     }).then(body => {
-      if (body.req_1.code != 0 || body.req_2 != 0 || body.req_3 != 0) throw new Error('get singer info faild.')
+      if (body?.req_1?.code != 0 || body?.req_2?.code != 0 || body?.req_3?.code != 0) throw new MusicSdkResponseError()
 
-      const info = body.req_1.data.singer_list[0]
+      const info = body.req_1.data?.singer_list?.[0]
+      if (!info) throw new MusicSdkResponseError()
+      const album = body.req_2.data
       const music = body.req_3.data
-      const album = body.req_3.data
       return {
         source: 'tx',
         id: info.basic_info.singer_mid,
@@ -153,8 +240,8 @@ export default {
           gender: info.ex_info.genre === 1 ? 'man' : 'woman',
         },
         count: {
-          music: music.totalNum,
-          album: album.total,
+          music: music?.totalNum ?? 0,
+          album: album?.total ?? 0,
         },
       }
     })
@@ -166,7 +253,6 @@ export default {
    * @param {*} limit
    */
   getAlbumList(id, page = 1, limit = 10) {
-    if (page === 1) page = 0
     return createMusicuFetch({
       req: {
         module: 'music.musichallAlbum.AlbumListServer',
@@ -174,7 +260,7 @@ export default {
         param: {
           singerMid: id,
           order: 0,
-          begin: page * limit,
+          begin: (page - 1) * limit,
           num: limit,
           songNumTag: 0,
           singerID: 0,
@@ -200,7 +286,6 @@ export default {
    * @param {*} limit
    */
   async getSongList(id, page = 1, limit = 100) {
-    if (page === 1) page = 0
     return createMusicuFetch({
       req: {
         module: 'musichall.song_list_server',
@@ -208,20 +293,25 @@ export default {
         param: {
           singerMid: id,
           order: 1,
-          begin: page * limit,
+          begin: (page - 1) * limit,
           num: limit,
         },
       },
     }).then(body => {
-      if (body.req.code != 0) throw new Error('get singer song list faild.')
+      if (!body?.req || body.req.code != 0 || !Array.isArray(body.req.data?.songList)) throw new MusicSdkResponseError()
 
-      const list = this.filterSongList(body.req.data.songList)
+      let list
+      try {
+        list = this.filterSongList(body.req.data.songList)
+      } catch {
+        throw new MusicSdkResponseError()
+      }
       return {
         source: 'tx',
         list,
         limit,
         page,
-        total: body.req.data.totalNum,
+        total: parseNonNegativeInt(body.req.data.totalNum) ?? list.length,
       }
     })
   },
@@ -241,7 +331,7 @@ export default {
     })
   },
   filterSongList(raw) {
-    raw.map(item => {
+    return raw.map(item => {
       return filterMusicInfoItem(item.songInfo)
     })
   },

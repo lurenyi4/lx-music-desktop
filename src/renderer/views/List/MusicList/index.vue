@@ -28,7 +28,7 @@
         @scroll="saveListPosition" @contextmenu.capture="handleListRightClick"
       >
         <div
-          class="list-item" :class="[{ [$style.active]: playerInfo.isPlayList && playerInfo.playIndex === index }, { selected: selectedIndex == index || rightClickSelectedIndex == index }, { active: selectedList.includes(item) }, { disabled: !assertApiSupport(item.source) }]"
+          class="list-item" :class="[{ [$style.active]: playerInfo.isPlayList && playerInfo.playIndex === index }, { selected: selectedIndex == index || rightClickSelectedIndex == index }, { active: selectedList.includes(item) }, { disabled: !assertPlaybackSupport(item.source) }]"
           @click="handleListItemClick($event, index)" @contextmenu="handleListItemRightClick($event, index)"
         >
           <div class="list-item-cell no-select" :class="$style.num" style="flex: 0 0 5%;">
@@ -45,11 +45,11 @@
             <span class="select name">{{ item.name }}</span>
             <span v-if="isShowSource" class="no-select label-source">{{ item.source }}</span>
           </div>
-          <div class="list-item-cell" style="flex: 0 0 22%;"><span class="select" :aria-label="item.singer">{{ item.singer }}</span></div>
-          <div class="list-item-cell" style="flex: 0 0 22%;"><span class="select" :aria-label="item.meta.albumName">{{ item.meta.albumName }}</span></div>
+          <div class="list-item-cell" style="flex: 0 0 22%;"><common-catalog-link :music="item" kind="artist" /></div>
+          <div class="list-item-cell" style="flex: 0 0 22%;"><common-catalog-link :music="item" kind="album" /></div>
           <div class="list-item-cell" style="flex: 0 0 9%;"><span class="no-select">{{ item.interval || '--/--' }}</span></div>
           <div class="list-item-cell" style="flex: 0 0 16%; padding-left: 0; padding-right: 0;">
-            <material-list-buttons :index="index" :download-btn="assertApiSupport(item.source) && item.source != 'local'" @btn-click="handleListBtnClick" />
+            <material-list-buttons :index="index" :download-btn="canDirectDownload(item)" @btn-click="handleListBtnClick" />
           </div>
         </div>
       </base-virtualized-list>
@@ -60,7 +60,7 @@
       >
         <div
           class="list-item"
-          :class="[{ [$style.active]: playerInfo.isPlayList && playerInfo.playIndex === index }, { selected: selectedIndex == index || rightClickSelectedIndex == index }, { active: selectedList.includes(item) }, { disabled: !assertApiSupport(item.source) }]"
+          :class="[{ [$style.active]: playerInfo.isPlayList && playerInfo.playIndex === index }, { selected: selectedIndex == index || rightClickSelectedIndex == index }, { active: selectedList.includes(item) }, { disabled: !assertPlaybackSupport(item.source) }]"
           @click="handleListItemClick($event, index)" @contextmenu="handleListItemRightClick($event, index)"
         >
           <div class="list-item-cell no-select" :class="$style.num" style="flex: 0 0 5%;">
@@ -77,8 +77,8 @@
             <span class="select name" :aria-label="item.name">{{ item.name }}</span>
             <span v-if="isShowSource" class="no-select label-source">{{ item.source }}</span>
           </div>
-          <div class="list-item-cell" style="flex: 0 0 25%;"><span class="select" :aria-label="item.singer">{{ item.singer }}</span></div>
-          <div class="list-item-cell" style="flex: 0 0 28%;"><span class="select" :aria-label="item.meta.albumName">{{ item.meta.albumName }}</span></div>
+          <div class="list-item-cell" style="flex: 0 0 25%;"><common-catalog-link :music="item" kind="artist" /></div>
+          <div class="list-item-cell" style="flex: 0 0 28%;"><common-catalog-link :music="item" kind="album" /></div>
           <div class="list-item-cell" style="flex: 0 0 10%;"><span class="no-select">{{ item.interval || '--/--' }}</span></div>
         </div>
       </base-virtualized-list>
@@ -98,7 +98,7 @@
     <common-download-multiple-modal v-model:show="isShowDownloadMultiple" :list="selectedList" teleport="#view" :list-id="listId" @confirm="removeAllSelect" />
     <search-list :list="list" :visible="isShowSearchBar" @action="handleMusicSearchAction" />
     <music-sort-modal v-model:show="isShowMusicSortModal" :music-info="selectedSortMusicInfo" :selected-num="selectedNum" @confirm="sortMusic" />
-    <music-toggle-modal v-model:show="isShowMusicToggleModal" :music-info="selectedToggleMusicInfo" @toggle="toggleSource" />
+    <music-toggle-modal v-model:show="isShowMusicToggleModal" :music-info="selectedToggleMusicInfo" @toggle="toggleSource" @preview="handlePreviewVersion" />
     <base-menu v-model="isShowItemMenu" :menus="menus" :xy="menuLocation" item-name="name" @menu-click="handleMenuClick" />
   </div>
 </template>
@@ -106,6 +106,7 @@
 <script>
 import { clipboardWriteText } from '@common/utils/electron'
 import { assertApiSupport } from '@renderer/store/utils'
+import { assertPlaybackSupport, canDirectDownload } from '@renderer/core/music/sourceCapabilities'
 import SearchList from './components/SearchList.vue'
 import MusicSortModal from './components/MusicSortModal.vue'
 import MusicToggleModal from './components/MusicToggleModal.vue'
@@ -206,6 +207,7 @@ export default {
       isShowMusicToggleModal,
       selectedToggleMusicInfo,
       toggleSource,
+      handlePreviewVersion,
     } = useMusicToggle(props, list)
 
     const {
@@ -224,6 +226,7 @@ export default {
       menuClick,
     } = useMenu({
       assertApiSupport,
+      canDirectDownload,
       emit,
 
       handleShowDownloadModal,
@@ -320,6 +323,8 @@ export default {
 
       handleListRightClick,
       assertApiSupport,
+      assertPlaybackSupport,
+      canDirectDownload,
 
       isShowListAdd,
       isMove,
@@ -354,6 +359,7 @@ export default {
       isShowMusicToggleModal,
       selectedToggleMusicInfo,
       toggleSource,
+      handlePreviewVersion,
     }
   },
 }

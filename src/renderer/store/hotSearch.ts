@@ -1,5 +1,7 @@
 import { reactive, markRaw } from '@common/utils/vueTools'
+import { YTM_AGGREGATE_SEARCH_TIMEOUT_MS } from '@common/recommendationConfig'
 import music from '@renderer/utils/musicSdk'
+import { getLiveYtmContextKey, isYtmAggregateSearchEnabled } from '@renderer/utils/musicSdk/ytm/runtimeContext'
 
 // import { deduplicationList } from '@common/utils/renderer'
 
@@ -16,8 +18,14 @@ export const sourceList: SourceLists = markRaw({
 })
 
 
+const getHotSearchSdk = (source: LX.OnlineSource) => {
+  const sdk = music[source]
+  if (sdk && 'hotSearch' in sdk) return sdk.hotSearch
+  return undefined
+}
+
 for (const source of music.sources) {
-  if (!music[source.id as LX.OnlineSource]?.hotSearch) continue
+  if (!getHotSearchSdk(source.id as LX.OnlineSource)) continue
   sources.push(source.id as LX.OnlineSource)
   sourceList[source.id as LX.OnlineSource] = reactive<string[]>([])
 }
@@ -44,30 +52,73 @@ const setLists = (lists: Array<{ source: LX.OnlineSource, list: string[] }>): st
   return sourceList.all = words.slice(0, sources.length * 10)
 }
 
+let lastYtmContextKey: string | null = null
+let lastIncludeYtmInAll: boolean | null = null
+let allRequestSeq = 0
+let ytmRequestSeq = 0
+
+const syncYtmHotSearchContext = () => {
+  const ctxKey = getLiveYtmContextKey()
+  const includeYtm = isYtmAggregateSearchEnabled(ctxKey)
+  if (lastYtmContextKey !== null && lastYtmContextKey !== ctxKey) {
+    if (sourceList.ytm) sourceList.ytm = []
+    sourceList.all = []
+  } else if (lastIncludeYtmInAll !== null && lastIncludeYtmInAll !== includeYtm) {
+    sourceList.all = []
+  }
+  lastYtmContextKey = ctxKey
+  lastIncludeYtmInAll = includeYtm
+  return { ctxKey, includeYtm }
+}
+
 export const getList = async(source: Source): Promise<string[]> => {
+  const { ctxKey, includeYtm } = syncYtmHotSearchContext()
   if (source == 'all') {
+    const reqSeq = ++allRequestSeq
     let task = []
-    for (const source of sources) {
-      if (source == 'all') continue
-      task.push(
-        sourceList[source]?.length
-          ? Promise.resolve({ source, list: sourceList[source] })
-          : (music[source]?.hotSearch.getList() ?? Promise.reject(new Error('source not found: ' + source))).catch((err: any) => {
-              console.log(err)
-              return { source, list: [] }
-            }),
-      )
+    for (const src of sources) {
+      if (src == 'all') continue
+      if (src == 'ytm' && !includeYtm) continue
+      const hotSearch = getHotSearchSdk(src)
+      const fetchOne = sourceList[src]?.length
+        ? Promise.resolve({ source: src, list: sourceList[src] })
+        : (hotSearch?.getList() ?? Promise.reject(new Error('source not found: ' + src)))
+      if (src === 'ytm') {
+        task.push(new Promise((resolve) => {
+          const timer = setTimeout(() => { resolve({ source: src, list: [] }) }, YTM_AGGREGATE_SEARCH_TIMEOUT_MS)
+          fetchOne.then(res => {
+            clearTimeout(timer)
+            resolve(res)
+          }).catch((err: any) => {
+            clearTimeout(timer)
+            console.log(err)
+            resolve({ source: src, list: [] })
+          })
+        }))
+      } else {
+        task.push(fetchOne.catch((err: any) => {
+          console.log(err)
+          return { source: src, list: [] }
+        }))
+      }
     }
     return Promise.all(task).then((results: any[]) => {
+      if (reqSeq !== allRequestSeq) return []
+      if (includeYtm && getLiveYtmContextKey() !== ctxKey) return []
       return setLists(results)
     })
   } else {
     if (sourceList[source]?.length) return Promise.resolve(sourceList[source])
-    if (!music[source]?.hotSearch) {
+    const hotSearch = getHotSearchSdk(source)
+    if (!hotSearch) {
       setList(source, [])
       return Promise.resolve([])
     }
-    return music[source]?.hotSearch.getList().then(data => setList(source, data.list))
+    const reqSeq = source === 'ytm' ? ++ytmRequestSeq : 0
+    return hotSearch.getList().then((data: { list: string[] }) => {
+      if (source === 'ytm' && (reqSeq !== ytmRequestSeq || getLiveYtmContextKey() !== ctxKey)) return []
+      return setList(source, data.list)
+    })
   }
 }
 

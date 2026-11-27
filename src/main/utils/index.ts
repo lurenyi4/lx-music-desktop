@@ -1,8 +1,10 @@
 import { encodePath, isUrl, throttle, isMac } from '@common/utils'
+import { parseProxyAddress } from '@common/utils/proxyAddress'
 import migrateSetting from '@common/utils/migrateSetting'
 import getStore from '@main/utils/store'
 import { STORE_NAMES, URL_SCHEME_RXP } from '@common/constants'
 import defaultSetting from '@common/defaultSetting'
+import { normalizeApiSourceBackups } from '@common/userApi'
 import defaultHotKey from '@common/defaultHotKey'
 import { migrateDataJson, migrateHotKey, migrateUserApi, parseDataFile } from './migrate'
 import { nativeTheme, powerSaveBlocker } from 'electron'
@@ -35,6 +37,7 @@ export const parseEnvParams = (argv = process.argv): { cmdParams: LX.CmdParams, 
 
 const primitiveType = ['string', 'boolean', 'number']
 const checkPrimitiveType = (val: any): boolean => val === null || primitiveType.includes(typeof val)
+const isSameArray = (a: unknown[], b: unknown[]): boolean => a.length === b.length && a.every((item, index) => Object.is(item, b[index]))
 // const handleMergeSetting = (defaultSetting: LX.AppSetting, currentSetting: Partial<LX.AppSetting>) => {
 //   const updatedSettingKeys: Array<keyof LX.AppSetting> = []
 //   for (const key of Object.keys(defaultSetting) as Array<keyof LX.AppSetting>) {
@@ -68,38 +71,38 @@ export const mergeSetting = (originSetting: LX.AppSetting, targetSetting?: Parti
   if (targetSetting) {
     const originSettingKeys = Object.keys(originSettingCopy)
     const targetSettingKeys = Object.keys(targetSetting)
+    const keysToCheck = (originSettingKeys.length > targetSettingKeys.length ? targetSettingKeys : originSettingKeys) as Array<keyof LX.AppSetting>
 
-    if (originSettingKeys.length > targetSettingKeys.length) {
-      for (const key of targetSettingKeys as Array<keyof LX.AppSetting>) {
-        const targetValue: any = targetSetting[key]
-        const isPrimitive = checkPrimitiveType(targetValue)
-        // if (checkPrimitiveType(value)) {
-        if (!isPrimitive || targetValue == originSettingCopy[key] || originSettingCopy[key] === undefined) continue
+    for (const key of keysToCheck) {
+      const originValue: any = originSettingCopy[key]
+      if (originValue === undefined) continue
+      const targetValue: any = targetSetting[key]
+      if (Array.isArray(originValue)) {
+        // 数组属可整体采纳的值（如 common.apiSourceBackups），按元素值比较并浅拷贝防外部共享引用
+        if (!Array.isArray(targetValue) || isSameArray(targetValue, originValue)) continue
+        const cloned = [...targetValue]
+        updatedSettingKeys.push(key)
+        // @ts-expect-error
+        updatedSetting[key] = cloned
+        // @ts-expect-error
+        originSettingCopy[key] = cloned
+      } else if (checkPrimitiveType(originValue)) {
+        if (!checkPrimitiveType(targetValue) || targetValue == originValue) continue
         updatedSettingKeys.push(key)
         updatedSetting[key] = targetValue
         // @ts-expect-error
         originSettingCopy[key] = targetValue
-        // } else {
-        //   if (!isPrimitive && currentValue != undefined) handleMergeSetting(value, currentValue)
-        // }
-      }
-    } else {
-      for (const key of originSettingKeys as Array<keyof LX.AppSetting>) {
-        const targetValue: any = targetSetting[key]
-        const isPrimitive = checkPrimitiveType(targetValue)
-        // if (checkPrimitiveType(value)) {
-        if (!isPrimitive || targetValue == originSettingCopy[key]) continue
-        updatedSettingKeys.push(key)
-        updatedSetting[key] = targetValue
-        // @ts-expect-error
-        originSettingCopy[key] = targetValue
-        // } else {
-        //   if (!isPrimitive && currentValue != undefined) handleMergeSetting(value, currentValue)
-        // }
       }
     }
   }
 
+  const backupKey = 'common.apiSourceBackups'
+  const backups = normalizeApiSourceBackups(originSettingCopy['common.apiSource'], originSettingCopy[backupKey])
+  if (JSON.stringify(backups) !== JSON.stringify(originSettingCopy[backupKey])) {
+    originSettingCopy[backupKey] = backups
+    updatedSetting[backupKey] = backups
+    if (!updatedSettingKeys.includes(backupKey)) updatedSettingKeys.push(backupKey)
+  }
   return {
     setting: originSettingCopy,
     updatedSettingKeys,
@@ -302,28 +305,26 @@ export const setPowerSaveBlocker = (enabled: boolean) => {
 }
 
 
+let lastEnvProxyStr: string | null = null
 let envProxy: null | { host: string, port: number } = null
+const resolveValidatedProxy = (host?: string | null, port?: string | number | null): { host: string, port: number } | null => {
+  const parsed = parseProxyAddress(host, port)
+  if (parsed) return parsed
+  const rawPort = String(port ?? '').trim()
+  if (!rawPort) return parseProxyAddress(host, 80)
+  return null
+}
 export const getProxy = () => {
   if (global.lx.appSetting['network.proxy.enable'] && global.lx.appSetting['network.proxy.host']) {
-    return {
-      host: global.lx.appSetting['network.proxy.host'],
-      port: parseInt(global.lx.appSetting['network.proxy.port'] || '80'),
-    }
+    return resolveValidatedProxy(global.lx.appSetting['network.proxy.host'], global.lx.appSetting['network.proxy.port'])
   }
-  if (envProxy) {
-    return {
-      host: envProxy.host,
-      port: envProxy.port,
+  const envProxyStr = envParams.cmdParams['proxy-server']
+  if (envProxyStr && typeof envProxyStr == 'string') {
+    if (envProxyStr !== lastEnvProxyStr) {
+      lastEnvProxyStr = envProxyStr
+      envProxy = resolveValidatedProxy(envProxyStr)
     }
-  } else {
-    const envProxyStr = envParams.cmdParams['proxy-server']
-    if (envProxyStr && typeof envProxyStr == 'string') {
-      const [host, port = ''] = envProxyStr.split(':')
-      return envProxy = {
-        host,
-        port: parseInt(port || '80'),
-      }
-    }
+    return envProxy ? { host: envProxy.host, port: envProxy.port } : null
   }
 
   return null

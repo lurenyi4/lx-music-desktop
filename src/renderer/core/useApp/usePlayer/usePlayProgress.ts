@@ -39,7 +39,7 @@ export default () => {
         mediaBuffer.playTime = 0
         if (appSetting['player.autoSkipOnError']) {
           console.warn('buffering end')
-          void playNext(true)
+          void playNext(true, 'error')
         }
         return
       }

@@ -13,7 +13,13 @@ import {
   saveLeaderboardSetting as saveLeaderboardSettingFromData,
   getLeaderboardSetting as getLeaderboardSettingFromData,
   saveViewPrevState as saveViewPrevStateFromData,
+  saveRecommendMetrics as saveRecommendMetricsFromData,
+  getRecommendMetrics as getRecommendMetricsFromData,
+  saveRecommendProfile as saveRecommendProfileFromData,
+  getRecommendProfile as getRecommendProfileFromData,
 } from '@renderer/utils/ipc'
+import type { MetricsState as RecommendMetrics } from '@renderer/core/recommend/session-core'
+import type { ProfileState as RecommendProfile } from '@renderer/core/recommend/profile-core'
 import { throttle } from '@common/utils'
 import { type DEFAULT_SETTING, LIST_IDS } from '@common/constants'
 import { dateFormat } from './index'
@@ -90,14 +96,20 @@ const saveListUpdateInfo = throttle(() => {
   saveListUpdateInfoFromData(listUpdateInfo)
 }, 1000)
 
+let listUpdateInfoInitPromise: Promise<void> | null = null
 const initListUpdateInfo = async() => {
-  if (listUpdateInfo == null) {
-    // eslint-disable-next-line require-atomic-updates
-    listUpdateInfo = await getListUpdateInfoFromData() ?? {}
-    for (const [id, info] of Object.entries(listUpdateInfo)) {
-      setUpdateTime(id, info.updateTime ? dateFormat(info.updateTime) : '')
+  if (listUpdateInfo != null) return
+  listUpdateInfoInitPromise ??= getListUpdateInfoFromData().then(data => {
+    if (listUpdateInfo == null) {
+      listUpdateInfo = data ?? {}
+      for (const [id, info] of Object.entries(listUpdateInfo)) {
+        setUpdateTime(id, info.updateTime ? dateFormat(info.updateTime) : '')
+      }
     }
-  }
+  }).finally(() => {
+    listUpdateInfoInitPromise = null
+  })
+  await listUpdateInfoInitPromise
 }
 export const getListUpdateInfo = async() => {
   await initListUpdateInfo()
@@ -108,17 +120,26 @@ export const setListUpdateInfo = async(info: LX.List.ListUpdateInfo) => {
   listUpdateInfo = info
   saveListUpdateInfo()
 }
+// 记录不存在时按“默认参与启动自动更新”补建（与启动谓词 isAutoUpdate !== false 保持一致）
+const getOrCreateListUpdateInfo = (id: string): LX.List.ListUpdateInfo[string] => listUpdateInfo[id] ?? { updateTime: 0, isAutoUpdate: true }
 export const setListAutoUpdate = async(id: string, enable: boolean) => {
   await initListUpdateInfo()
-  const targetInfo = listUpdateInfo[id] ?? { updateTime: 0, isAutoUpdate: false }
+  const targetInfo = getOrCreateListUpdateInfo(id)
   targetInfo.isAutoUpdate = enable
   listUpdateInfo[id] = targetInfo
   saveListUpdateInfo()
 }
 export const setListUpdateTime = async(id: string, time: number) => {
   await initListUpdateInfo()
-  const targetInfo = listUpdateInfo[id] ?? { updateTime: 0, isAutoUpdate: false }
+  const targetInfo = getOrCreateListUpdateInfo(id)
   targetInfo.updateTime = time
+  listUpdateInfo[id] = targetInfo
+  saveListUpdateInfo()
+}
+export const setListUpdateError = async(id: string, error: string | null) => {
+  await initListUpdateInfo()
+  const targetInfo = getOrCreateListUpdateInfo(id)
+  targetInfo.updateError = error
   listUpdateInfo[id] = targetInfo
   saveListUpdateInfo()
 }
@@ -185,4 +206,71 @@ export const setLeaderboardSetting = async(setting: Partial<typeof DEFAULT_SETTI
 
 export const saveViewPrevState = (state: typeof DEFAULT_SETTING['viewPrevState']) => {
   saveViewPrevStateThrottle(state)
+}
+
+// ===== 探索电台本地指标（TT-4，D9/D14）：单 JSON 快照读写对 =====
+let recommendMetrics: RecommendMetrics | null = null
+let recommendMetricsInitialized = false
+let recommendMetricsWriteSeq = 0
+let recommendMetricsInitPromise: Promise<void> | null = null
+const initRecommendMetrics = async() => {
+  if (recommendMetricsInitialized) return
+  if (!recommendMetricsInitPromise) {
+    const seqAtStart = recommendMetricsWriteSeq
+    recommendMetricsInitPromise = getRecommendMetricsFromData().then(raw => {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+      if (recommendMetricsWriteSeq === seqAtStart) recommendMetrics = (raw as RecommendMetrics | null) ?? null
+      recommendMetricsInitialized = true
+    }).finally(() => {
+      recommendMetricsInitPromise = null
+    })
+  }
+  await recommendMetricsInitPromise
+}
+/** 读取指标快照（无存档为 null，归一口径在 session-core.hydrateMetrics）。 */
+export const getRecommendMetrics = async(): Promise<RecommendMetrics | null> => {
+  await initRecommendMetrics()
+  return recommendMetrics ?? null
+}
+/**
+ * 写入指标快照：关键事件直写不节流（事件量级小——只发生在切歌/反馈/开收台/计划完成点），
+ * 延迟合并会把“最后一次事件”的落盘时机让给不确定的节流窗口，对计数器没有收益。
+ */
+export const saveRecommendMetrics = (metrics: RecommendMetrics): void => {
+  recommendMetricsWriteSeq++
+  recommendMetrics = metrics
+  recommendMetricsInitialized = true
+  saveRecommendMetricsFromData(metrics)
+}
+
+// ===== 本地用户画像（TP-2，D8）：单 JSON 快照读写对，沿用 recommendMetrics 口径 =====
+let recommendProfile: RecommendProfile | null = null
+let recommendProfileInitialized = false
+let recommendProfileWriteSeq = 0
+let recommendProfileInitPromise: Promise<void> | null = null
+const initRecommendProfile = async() => {
+  if (recommendProfileInitialized) return
+  if (!recommendProfileInitPromise) {
+    const seqAtStart = recommendProfileWriteSeq
+    recommendProfileInitPromise = getRecommendProfileFromData().then(raw => {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+      if (recommendProfileWriteSeq === seqAtStart) recommendProfile = (raw as RecommendProfile | null) ?? null
+      recommendProfileInitialized = true
+    }).finally(() => {
+      recommendProfileInitPromise = null
+    })
+  }
+  await recommendProfileInitPromise
+}
+/** 读取画像快照（无存档为 null，归一口径在 profile-core.hydrateProfile）。 */
+export const getRecommendProfile = async(): Promise<RecommendProfile | null> => {
+  await initRecommendProfile()
+  return recommendProfile ?? null
+}
+/** 写入画像快照：事件直写不节流（量级小——只发生在切歌结算/收藏/跳过回注点，口径同指标快照）。 */
+export const saveRecommendProfile = (profile: RecommendProfile): void => {
+  recommendProfileWriteSeq++
+  recommendProfile = profile
+  recommendProfileInitialized = true
+  saveRecommendProfileFromData(profile)
 }

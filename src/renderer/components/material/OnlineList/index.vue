@@ -37,13 +37,13 @@
                   <span v-if="item.meta._qualitys.flac24bit" class="no-select badge badge-theme-primary">{{ $t('tag__lossless_24bit') }}</span>
                   <span v-else-if="item.meta._qualitys.ape || item.meta._qualitys.flac || item.meta._qualitys.wav" class="no-select badge badge-theme-primary">{{ $t('tag__lossless') }}</span>
                   <span v-else-if="item.meta._qualitys['320k']" class="no-select badge badge-theme-secondary">{{ $t('tag__high_quality') }}</span>
-                  <span v-if="sourceTag" class="no-select badge badge-theme-tertiary">{{ item.source }}</span>
+                  <span v-if="sourceTag" class="no-select badge badge-theme-tertiary">{{ sourceNames[item.source] || item.source }}</span>
                 </div>
-                <div class="list-item-cell" style="flex: 0 0 22%;"><span class="select" :aria-label="item.singer">{{ item.singer }}</span></div>
-                <div class="list-item-cell" style="flex: 0 0 22%;"><span class="select" :aria-label="item.meta.albumName">{{ item.meta.albumName }}</span></div>
+                <div class="list-item-cell" style="flex: 0 0 22%;"><common-catalog-link :music="item" kind="artist" /></div>
+                <div class="list-item-cell" style="flex: 0 0 22%;"><common-catalog-link :music="item" kind="album" /></div>
                 <div class="list-item-cell" style="flex: 0 0 9%;"><span class="no-select">{{ item.interval || '--/--' }}</span></div>
                 <div class="list-item-cell" style="flex: 0 0 16%; padding-left: 0; padding-right: 0;">
-                  <material-list-buttons :index="index" :remove-btn="false" :download-btn="assertApiSupport(item.source)" :play-btn="checkApiSource ? assertApiSupport(item.source) : true" @btn-click="handleListBtnClick" />
+                  <material-list-buttons :index="index" :remove-btn="false" :download-btn="canDirectDownload(item)" :play-btn="checkApiSource ? assertPlaybackSupport(item.source) : true" @btn-click="handleListBtnClick" />
                 </div>
               </div>
             </template>
@@ -65,10 +65,10 @@
                   <span v-if="item.meta._qualitys.flac24bit" class="no-select badge badge-theme-primary">{{ $t('tag__lossless_24bit') }}</span>
                   <span v-else-if="item.meta._qualitys.ape || item.meta._qualitys.flac || item.meta._qualitys.wav" class="no-select badge badge-theme-primary">{{ $t('tag__lossless') }}</span>
                   <span v-else-if="item.meta._qualitys['320k']" class="no-select badge badge-theme-secondary">{{ $t('tag__high_quality') }}</span>
-                  <span v-if="sourceTag" class="no-select badge badge-theme-tertiary">{{ item.source }}</span>
+                  <span v-if="sourceTag" class="no-select badge badge-theme-tertiary">{{ sourceNames[item.source] || item.source }}</span>
                 </div>
-                <div class="list-item-cell" style="flex: 0 0 24%;"><span class="select" :aria-label="item.singer">{{ item.singer }}</span></div>
-                <div class="list-item-cell" style="flex: 0 0 27%;"><span class="select" :aria-label="item.meta.albumName">{{ item.meta.albumName }}</span></div>
+                <div class="list-item-cell" style="flex: 0 0 24%;"><common-catalog-link :music="item" kind="artist" /></div>
+                <div class="list-item-cell" style="flex: 0 0 27%;"><common-catalog-link :music="item" kind="album" /></div>
                 <div class="list-item-cell" style="flex: 0 0 10%;"><span class="no-select">{{ item.interval || '--/--' }}</span></div>
               </div>
             </template>
@@ -101,6 +101,7 @@
 <script>
 import { clipboardWriteText } from '@common/utils/electron'
 import { assertApiSupport } from '@renderer/store/utils'
+import { assertPlaybackSupport, canDirectDownload } from '@renderer/core/music/sourceCapabilities'
 import { ref } from '@common/utils/vueTools'
 import useList from './useList'
 import useMenu from './useMenu'
@@ -109,6 +110,7 @@ import useMusicDownload from './useMusicDownload'
 import useMusicAdd from './useMusicAdd'
 import useMusicActions from './useMusicActions'
 import { appSetting } from '@renderer/store/setting'
+import { sourceNames } from '@renderer/store'
 export default {
   name: 'MaterialOnlineList',
   props: {
@@ -139,6 +141,10 @@ export default {
       default: '',
     },
     checkApiSource: {
+      type: Boolean,
+      default: false,
+    },
+    playListMode: {
       type: Boolean,
       default: false,
     },
@@ -192,6 +198,8 @@ export default {
     } = useMenu({
       props,
       assertApiSupport,
+      assertPlaybackSupport,
+      canDirectDownload,
       emit,
 
       handleShowDownloadModal,
@@ -203,6 +211,7 @@ export default {
       handleDislikeMusic,
     })
 
+    let rightClickTargetId = null
     const handleListItemClick = (event, index) => {
       if (rightClickSelectedIndex.value > -1) return
       handleSelectData(index)
@@ -210,11 +219,21 @@ export default {
     }
     const handleListItemRightClick = (event, index) => {
       rightClickSelectedIndex.value = index
+      rightClickTargetId = props.list[index]?.id ?? null
       showMenu(event, props.list[index], index)
     }
     const handleMenuClick = (action) => {
-      let index = rightClickSelectedIndex.value
+      const targetId = rightClickTargetId
+      const fallbackIndex = rightClickSelectedIndex.value
       rightClickSelectedIndex.value = -1
+      rightClickTargetId = null
+      const index = targetId != null
+        ? props.list.findIndex(item => item.id === targetId)
+        : fallbackIndex
+      if (index < 0) {
+        menuClick(null, -1)
+        return
+      }
       menuClick(action, index)
     }
     const handleListRightClick = (event) => {
@@ -268,6 +287,8 @@ export default {
 
       handleListRightClick,
       assertApiSupport,
+      assertPlaybackSupport,
+      canDirectDownload,
 
       isShowListAdd,
       isShowListAddMultiple,
@@ -279,6 +300,7 @@ export default {
 
       scrollToTop,
       actionButtonsVisible,
+      sourceNames,
     }
   },
 }

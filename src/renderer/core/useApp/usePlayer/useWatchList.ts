@@ -3,7 +3,8 @@ import { onBeforeUnmount } from '@common/utils/vueTools'
 import { playInfo, playMusicInfo } from '@renderer/store/player/state'
 import { setPlayMusicInfo, updatePlayIndex } from '@renderer/store/player/action'
 import { throttle } from '@common/utils'
-import { playNext, stop } from '@renderer/core/player'
+import { queueSession } from '@renderer/store/player/queueSession'
+import { playNext, stop, resetRandomNextMusicInfo } from '@renderer/core/player'
 
 const changedListIds = new Set<string | null>()
 
@@ -13,16 +14,17 @@ export default () => {
     changedListIds.clear()
     if (isSkip) return
 
+    resetRandomNextMusicInfo()
     const { playIndex } = updatePlayIndex()
-    if (playIndex < 0) { // 歌曲被移除
+    // Saved-list highlighting may disappear while its playback-only session remains intact.
+    if (queueSession.list !== null && queueSession.listId === playInfo.playerListId && queueSession.list.some(song => song.id === playMusicInfo.musicInfo?.id)) return
+    if (playIndex < 0 && !playMusicInfo.isTempPlay) { // 普通列表歌曲被移除；临时播放不要求仍在原列表中
       if (window.lx.isPlayedStop) {
         stop()
-        setTimeout(() => {
-          setPlayMusicInfo(null, null)
-        })
+        setPlayMusicInfo(null, null)
       } else if (!playMusicInfo.isTempPlay) {
         console.log('current music removed')
-        void playNext(true)
+        void playNext(true, 'removed')
       }
     }
   })

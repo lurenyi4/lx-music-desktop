@@ -1,17 +1,21 @@
 import { addTempPlayList } from '@renderer/store/player/action'
-import { playList } from '@renderer/core/player'
+import { playList, playMusicSelection } from '@renderer/core/player'
 
 export default ({ props, selectedList, list, removeAllSelect }) => {
   let clickTime = 0
   let clickIndex = -1
 
-  const handlePlayMusic = (index) => {
-    playList(props.listId, index)
+  const handlePlayMusic = (index, single = false) => {
+    if (selectedList.value.length && !single) {
+      const ids = new Set(selectedList.value.map(item => item.id))
+      playMusicSelection(list.value.filter(item => ids.has(item.id)), props.listId)
+      removeAllSelect()
+    } else playList(props.listId, index)
   }
 
   const handlePlayMusicLater = (index, single) => {
     if (selectedList.value.length && !single) {
-      addTempPlayList(selectedList.value.map(s => ({ listId: props.listId, musicInfo: s })))
+      addTempPlayList(list.value.filter(item => selectedList.value.some(selected => selected.id === item.id)).map(s => ({ listId: props.listId, musicInfo: s })))
       removeAllSelect()
     } else {
       addTempPlayList([{ listId: props.listId, musicInfo: list.value[index] }])

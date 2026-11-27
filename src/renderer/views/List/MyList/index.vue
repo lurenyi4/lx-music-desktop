@@ -55,6 +55,7 @@
           <transition name="list-active">
             <svg-icon v-if="item.id == listId" name="angle-right-solid" :class="$style.activeIcon" />
           </transition>
+          <span v-if="item.cover" :class="$style.listsItemCover" :style="{ backgroundImage: `url(${JSON.stringify(item.cover)})` }" />
           {{ item.name }}
         </span>
         <base-input
@@ -189,6 +190,7 @@ export default {
     }
 
     const handleListToggle = (id) => {
+      if (isShowMenu.value) return
       if (id == props.listId) return
       router.replace({
         path: '/list',
@@ -255,15 +257,19 @@ export default {
 @lists-item-height: 36px;
 .lists {
   flex: none;
-  width: 16%;
+  width: 18%;
+  min-width: 150px;
   display: flex;
   flex-flow: column nowrap;
+  border-right: 1px solid var(--ui-border-subtle);
 }
 .listHeader {
   position: relative;
   display: flex;
   flex-flow: row nowrap;
-  border-bottom: var(--color-list-header-border-bottom);
+  align-items: center;
+  border-bottom: 1px solid var(--ui-border-subtle);
+  padding: 0 4px;
   &:hover {
     .listsAdd {
       opacity: 1;
@@ -273,6 +279,8 @@ export default {
 .listsTitle {
   flex: auto;
   font-size: 12px;
+  font-weight: 600;
+  color: var(--color-font-label);
   line-height: 38px;
   padding: 0 10px;
   .mixin-ellipsis-1();
@@ -280,35 +288,37 @@ export default {
 .headerBtns {
   flex: none;
   display: flex;
+  gap: 2px;
 }
 .listsAdd {
-  // position: absolute;
-  // right: 0;
-  margin-top: 6px;
   background: none;
-  height: 30px;
+  height: 28px;
+  width: 28px;
   border: none;
   outline: none;
-  border-radius: @radius-border;
+  border-radius: var(--ui-radius-sm);
   cursor: pointer;
-  opacity: .1;
-  transition: opacity @transition-normal;
-  color: var(--color-button-font);
+  opacity: .45;
+  transition: opacity @transition-fast, background-color @transition-fast;
+  color: var(--color-font-label);
   svg {
-    vertical-align: bottom;
+    vertical-align: middle;
   }
   &:active {
-    opacity: .7 !important;
+    opacity: .9 !important;
   }
   &:hover {
-    opacity: .6 !important;
+    opacity: 1 !important;
+    background-color: var(--ui-surface-hover);
+    color: var(--color-primary);
   }
 }
 .listsContent {
   flex: auto;
   min-width: 0;
-  overflow-y: scroll !important;
-  // border-right: 1px solid rgba(0, 0, 0, 0.12);
+  padding: 6px;
+  box-sizing: border-box;
+  overflow-y: auto !important;
 
   &.sortable {
     * {
@@ -328,18 +338,20 @@ export default {
 }
 .listsItem {
   position: relative;
-  transition: .3s ease;
-  transition-property: color, background-color, opacity;
+  border-radius: var(--ui-radius-sm);
+  margin-bottom: 2px;
+  transition: color @transition-fast, background-color @transition-fast, opacity @transition-fast;
   background-color: transparent;
   &:not(.active) {
     &:hover {
-      background-color: var(--color-primary-background-hover);
+      background-color: var(--ui-surface-hover);
       cursor: pointer;
     }
   }
   &.active {
-    // background-color:
     color: var(--color-primary);
+    font-weight: 600;
+    background-color: var(--ui-surface-active);
   }
   &.selected {
     background-color: var(--color-primary-font-active);
@@ -374,6 +386,16 @@ export default {
   font-size: 13px;
   line-height: @lists-item-height;
   .mixin-ellipsis-1();
+}
+.listsItemCover {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  margin-right: 6px;
+  border-radius: 4px;
+  vertical-align: middle;
+  background-position: center;
+  background-size: cover;
 }
 .listsInput {
   width: 100%;

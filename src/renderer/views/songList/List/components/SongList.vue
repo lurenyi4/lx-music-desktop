@@ -14,12 +14,12 @@
               <div :class="$style.songlist_info">
                 <span v-if="item.total != null"><svg-icon name="music" />{{ item.total }}</span>
                 <span v-if="item.play_count != null"><svg-icon name="headphones" />{{ item.play_count }}</span>
-                <span v-if="visibleSource">{{ item.source }}</span>
+                <span v-if="visibleSource">{{ getSourceName(item.source) }}</span>
               </div>
             </div>
           </div>
         </li>
-        <li v-for="(i, index) in 6" :key="index" :class="$style.item" style="margin-bottom: 0;height: 0;" />
+        <li v-for="(i, index) in 6" :key="index" :class="$style.itemSpacer" aria-hidden="true" />
       </ul>
       <div :class="$style.pagination">
         <material-pagination :count="props.listInfo.total" :limit="props.listInfo.limit" :page="props.listInfo.page" @btn-click="togglePage" />
@@ -35,6 +35,7 @@
 
 <script setup lang="ts">
 import { ref } from '@common/utils/vueTools'
+import { sourceNames } from '@renderer/store'
 import type { ListInfo, ListInfoItem } from '@renderer/store/songList/state'
 import { useRoute, useRouter } from '@common/utils/vueRouter'
 
@@ -56,6 +57,10 @@ const emit = defineEmits(['toggle-page'])
 
 const togglePage = (page: number) => {
   emit('toggle-page', page)
+}
+
+const getSourceName = (source: LX.Source) => {
+  return (sourceNames.value as Partial<Record<LX.Source, string>>)[source] ?? source
 }
 
 const toDetail = (info: ListInfoItem) => {
@@ -106,12 +111,13 @@ defineExpose({
   flex-flow: column nowrap;
   font-size: 14px;
   box-sizing: border-box;
-  padding: 15px 15px 0;
+  padding: 16px 20px 0;
 
   ul {
     display: flex;
     flex-flow: row wrap;
     justify-content: space-between;
+    gap: 14px 0;
   }
 }
 .item {
@@ -119,27 +125,39 @@ defineExpose({
   width: 32%;
   box-sizing: border-box;
   display: flex;
-  // flex-flow: column nowrap;
-  // padding: 10px;
-  margin-bottom: 20px;
+  padding: 10px;
+  border-radius: var(--ui-radius-md);
+  border: 1px solid transparent;
+  background-color: transparent;
   cursor: pointer;
-  transition: opacity @transition-normal;
+  transition: transform @transition-fast, background-color @transition-fast, border-color @transition-fast, box-shadow @transition-fast;
   &:hover {
-    opacity: .7;
+    transform: translateY(-2px);
+    background-color: var(--ui-surface-card);
+    border-color: var(--ui-border-subtle);
+    box-shadow: var(--ui-shadow-sm);
   }
+}
+.itemSpacer {
+  max-width: 360px;
+  width: 32%;
+  height: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  pointer-events: none;
+  cursor: default;
 }
 .image {
   flex: none;
-  width: 40%;
+  width: 38%;
   display: flex;
   background-position: center;
   background-size: cover;
-  border-radius: 4px;
+  border-radius: var(--ui-radius-sm);
   overflow: hidden;
-  opacity: .9;
   aspect-ratio: 1 / 1;
-
-  box-shadow: 0 0 2px 0 rgba(0,0,0,.2);
+  box-shadow: var(--ui-shadow-sm);
 }
 .img {
   width: 100%;
@@ -149,13 +167,12 @@ defineExpose({
 
 .desc {
   flex: auto;
-  padding: 2px 15px 2px 7px;
+  padding: 2px 4px 2px 12px;
   overflow: hidden;
   h4 {
-    font-size: 14px;
-    // height: 2.6em;
-    text-align: justify;
-    line-height: 1.3;
+    font-size: 13.5px;
+    font-weight: 600;
+    line-height: 1.4;
     .mixin-ellipsis-2();
   }
 }

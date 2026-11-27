@@ -22,20 +22,40 @@ export default () => {
     sortId: '',
   })
 
+  let searchVersion = 0
   const search = (text: string, source: SearchSource, page: number) => {
     // console.log(text, source, page)
+    const version = ++searchVersion
     listInfo.value = listInfos[source] as SearchListInfo
-    if (text.length) void addHistoryWord(text)
-    void searchSongList(text, page, source).then((list: ListInfoItem[]) => {
+    if (text.length) void addHistoryWord(text).catch(error => { console.log(error) })
+    const promise = searchSongList(text, page, source)
+    const willRestorePos = Boolean(
+      listInfo.value &&
+      listInfo.value.key == window.lx.songListInfo.searchKey &&
+      window.lx.songListInfo.searchPosition,
+    )
+    const initialScrollTop = listRef.value?.getScrollTop?.() ?? 0
+    if (source === 'all' && text.length && !willRestorePos) {
+      window.lx.songListInfo.searchKey = null
+      void nextTick(() => {
+        if (version === searchVersion) listRef.value?.scrollTo(0)
+      })
+    }
+    return promise.then((list: ListInfoItem[]) => {
+      if (version !== searchVersion) return
       // console.log(list)
       if (listInfo.value.key == window.lx.songListInfo.searchKey && window.lx.songListInfo.searchPosition) {
-        void nextTick(() => {
-          listRef.value?.scrollTo(window.lx.songListInfo.searchPosition)
-        })
-      } else if (list.length && listRef.value) {
+        const userScrolled = source === 'all' && (listRef.value?.getScrollTop?.() ?? 0) !== initialScrollTop
+        if (!userScrolled) {
+          void nextTick(() => {
+            if (version !== searchVersion) return
+            listRef.value?.scrollTo(window.lx.songListInfo.searchPosition)
+          })
+        }
+      } else if (source !== 'all' && list.length && listRef.value) {
         window.lx.songListInfo.searchKey = null
         void nextTick(() => {
-          listRef.value.scrollTo(0)
+          if (version === searchVersion) listRef.value?.scrollTo(0)
         })
       }
     })

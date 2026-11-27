@@ -2,9 +2,12 @@ import leaderboard from './leaderboard'
 import lyric from './lyric'
 import songList from './songList'
 import musicSearch from './musicSearch'
+import simiSong from './simiSong'
 import { apis } from '../api-source'
 import hotSearch from './hotSearch'
 import comment from './comment'
+import singer from './singer'
+import album from './album'
 // import tipSearch from './tipSearch'
 
 const tx = {
@@ -12,8 +15,11 @@ const tx = {
   leaderboard,
   songList,
   musicSearch,
+  simiSong,
   hotSearch,
   comment,
+  singer,
+  album,
 
   getMusicUrl(songInfo, type) {
     return apis('tx').getMusicUrl(songInfo, type)

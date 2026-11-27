@@ -1,7 +1,7 @@
 import { rendererSend, rendererInvoke, rendererOn, rendererOff } from '@common/rendererIpc'
 import { HOTKEY_RENDERER_EVENT_NAME, WIN_MAIN_RENDERER_EVENT_NAME, CMMON_EVENT_NAME } from '@common/ipcNames'
 import { type ProgressInfo, type UpdateDownloadedEvent, type UpdateInfo } from 'electron-updater'
-import { markRaw } from '@common/utils/vueTools'
+import { markRaw, toRaw } from '@common/utils/vueTools'
 import * as hotKeys from '@common/hotKey'
 import { APP_EVENT_NAMES, DATA_KEYS, DEFAULT_SETTING } from '@common/constants'
 
@@ -126,6 +126,9 @@ export const importUserApi = async(fileText: string) => {
 }
 export const setUserApi = async(source: LX.UserApi.UserApiSetApiParams): Promise<void> => {
   return rendererInvoke<LX.UserApi.UserApiSetApiParams>(WIN_MAIN_RENDERER_EVENT_NAME.set_user_api, source)
+}
+export const setUserApiBackups = async(apiIds: LX.UserApi.UserApiSetApiBackupsParams): Promise<void> => {
+  return rendererInvoke<LX.UserApi.UserApiSetApiBackupsParams>(WIN_MAIN_RENDERER_EVENT_NAME.set_user_api_backups, apiIds)
 }
 export const removeUserApi = async(ids: string[]) => {
   return rendererInvoke<string[], LX.UserApi.UserApiInfo[]>(WIN_MAIN_RENDERER_EVENT_NAME.remove_user_api, ids)
@@ -293,6 +296,32 @@ export const saveViewPrevState = (state: typeof DEFAULT_SETTING['viewPrevState']
 }
 export const getViewPrevState = async() => {
   return (await rendererInvoke<string, typeof DEFAULT_SETTING['viewPrevState']>(WIN_MAIN_RENDERER_EVENT_NAME.get_data, DATA_KEYS.viewPrevState)) ?? { ...DEFAULT_SETTING.viewPrevState }
+}
+
+// TT-4（D9/D14）：探索电台本地指标快照（单 JSON，不进设置项）；
+// 通用管道不识别特性类型，unknown 透传——快照形状归 session-core 所有，类型收口在特性门面 data.ts
+export const saveRecommendMetrics = (metrics: unknown) => {
+  rendererSend(WIN_MAIN_RENDERER_EVENT_NAME.save_data, {
+    path: DATA_KEYS.recommendMetrics,
+    data: metrics,
+  })
+}
+// 获取探索电台本地指标快照（无存档为 null，由调用方 hydrate 归一）
+export const getRecommendMetrics = async() => {
+  return rendererInvoke<string, unknown>(WIN_MAIN_RENDERER_EVENT_NAME.get_data, DATA_KEYS.recommendMetrics)
+}
+
+// TP-2（D8）：本地用户画像快照（单 JSON，不进设置项）；
+// 与 recommendMetrics 同一通用管道：unknown 透传，快照形状归 profile-core 所有，类型收口在特性门面 data.ts
+export const saveRecommendProfile = (profile: unknown) => {
+  rendererSend(WIN_MAIN_RENDERER_EVENT_NAME.save_data, {
+    path: DATA_KEYS.recommendProfile,
+    data: profile,
+  })
+}
+// 获取本地用户画像快照（无存档为 null，由调用方 hydrate 归一）
+export const getRecommendProfile = async() => {
+  return rendererInvoke<string, unknown>(WIN_MAIN_RENDERER_EVENT_NAME.get_data, DATA_KEYS.recommendProfile)
 }
 
 
@@ -640,7 +669,11 @@ export const getThemes = async() => {
  * @returns
  */
 export const getMusicUrl = async(musicInfo: LX.Music.MusicInfo, type: LX.Quality): Promise<string> => {
-  return rendererInvoke<string, string>(WIN_MAIN_RENDERER_EVENT_NAME.get_music_url, `${musicInfo.id}_${type}`)
+  return (await getMusicUrlInfo(musicInfo, type))?.url ?? ''
+}
+
+export const getMusicUrlInfo = async(musicInfo: LX.Music.MusicInfo, type: LX.Quality): Promise<LX.Music.MusicUrlInfo | null> => {
+  return rendererInvoke<string, LX.Music.MusicUrlInfo | null>(WIN_MAIN_RENDERER_EVENT_NAME.get_music_url, `${musicInfo.id}_${type}`)
 }
 
 /**
@@ -649,10 +682,11 @@ export const getMusicUrl = async(musicInfo: LX.Music.MusicInfo, type: LX.Quality
  * @param type URL音质
  * @param url 歌曲URL
  */
-export const saveMusicUrl = async(musicInfo: LX.Music.MusicInfo, type: LX.Quality, url: string) => {
+export const saveMusicUrl = async(musicInfo: LX.Music.MusicInfo, type: LX.Quality, url: string, resolvedMusicInfo?: LX.Music.MusicInfoOnline) => {
   await rendererInvoke<LX.Music.MusicUrlInfo>(WIN_MAIN_RENDERER_EVENT_NAME.save_music_url, {
     id: `${musicInfo.id}_${type}`,
     url,
+    musicInfo: toRaw(resolvedMusicInfo ?? (musicInfo.source === 'local' ? undefined : musicInfo)),
   })
 }
 /**

@@ -1,7 +1,10 @@
 <template>
   <div :class="$style.footer">
     <div :class="$style.footerLeft">
-      <control-btns />
+      <div :class="$style.controlsRow">
+        <PlaybackQueue />
+        <control-btns />
+      </div>
       <div :class="$style.progressContainer">
         <div :class="$style.progressContent">
           <common-progress-bar
@@ -12,7 +15,7 @@
           />
         </div>
       </div>
-      <div :class="$style.timeLabel"><span :class="$style.status" style="margin-right: 15px">{{ status }}</span><span>{{ nowPlayTimeStr }}</span><span style="margin: 0 5px;">/</span><span>{{ maxPlayTimeStr }}</span></div>
+      <div :class="$style.timeLabel"><span :class="$style.status" style="margin-right: 15px">{{ playMusicInfo.versionNotice || status }}</span><span>{{ nowPlayTimeStr }}</span><span style="margin: 0 5px;">/</span><span>{{ maxPlayTimeStr }}</span></div>
     </div>
     <div :class="$style.playControl">
       <div :class="$style.playBtn" :aria-label="$t('player__prev')" @click="playPrev()">
@@ -20,7 +23,7 @@
           <use xlink:href="#icon-prevMusic" />
         </svg>
       </div>
-      <div :class="$style.playBtn" :aria-label="isPlay ? $t('player__pause') : $t('player__play')" @click="togglePlay">
+      <div :class="[$style.playBtn, $style.playPrimary]" :aria-label="isPlay ? $t('player__pause') : $t('player__play')" @click="togglePlay">
         <svg v-if="isPlay" version="1.1" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" height="100%" viewBox="0 0 1024 1024" space="preserve">
           <use xlink:href="#icon-pause" />
         </svg>
@@ -39,10 +42,11 @@
 
 <script setup>
 import { playNext, playPrev, togglePlay } from '@renderer/core/player'
-import { status, isPlay } from '@renderer/store/player/state'
+import { status, isPlay, playMusicInfo } from '@renderer/store/player/state'
 import usePlayProgress from '@renderer/utils/compositions/usePlayProgress'
 
 import ControlBtns from './components/ControlBtns.vue'
+import PlaybackQueue from '../PlayBar/PlaybackQueue.vue'
 
 const {
   nowPlayTimeStr,
@@ -67,8 +71,16 @@ const {
   flex: auto;
   display: flex;
   flex-flow: column nowrap;
-  padding: 13px 13px 13px 30px;
+  justify-content: center;
+  padding: 10px 13px 10px 30px;
   overflow: hidden;
+}
+
+.controlsRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .progressContainer {
@@ -94,14 +106,21 @@ const {
 }
 .timeLabel {
   width: 100%;
-  height: 18px;
+  height: 20px;
   display: flex;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-font-label);
   span {
-    font-size: 13px;
+    font-size: 12px;
+    flex: none;
+    white-space: nowrap;
   }
-}
-.status {
-  flex: auto;
+  .status {
+    flex: auto;
+    min-width: 0;
+    .mixin-ellipsis-1();
+  }
 }
 
 .playControl {
@@ -110,33 +129,50 @@ const {
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  padding: 0 25px;
+  padding: 0 28px;
+  gap: 10px;
   color: var(--color-button-font);
 }
 .playBtn {
-  height: 40%;
-  padding: 5px;
+  width: 38px;
+  height: 38px;
+  padding: 9px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   flex: none;
-  // transition: @transition-normal;
-  // transition-property: color;
-  color: var(--color-button-font);
-  transition: opacity 0.2s ease;
-  opacity: 1;
-  cursor: pointer;
+  color: var(--color-font);
+  transition: background-color @transition-fast, transform 0.12s ease, opacity @transition-fast;
+  opacity: 0.85;
 
-  +.playBtn {
-    margin-left: 10px;
-  }
   svg {
     fill: currentColor;
-    filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.2));
   }
   &:hover {
-    opacity: 0.8;
+    opacity: 1;
+    background-color: var(--ui-surface-hover);
   }
   &:active {
-    opacity: 0.6;
+    transform: scale(0.94);
+  }
+}
+.playPrimary {
+  width: 48px;
+  height: 48px;
+  padding: 12px;
+  opacity: 1;
+  background-color: var(--color-primary);
+  color: var(--ui-on-primary, #fff);
+  box-shadow: inset 0 0 0 1px var(--ui-border-strong), var(--ui-primary-shadow);
+  &:hover {
+    background-color: var(--ui-primary-hover-bg, var(--color-primary-dark-100));
+    transform: scale(1.04);
+  }
+  &:active {
+    transform: scale(0.95);
   }
 }
 

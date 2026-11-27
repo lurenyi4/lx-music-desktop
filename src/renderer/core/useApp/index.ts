@@ -15,6 +15,10 @@ import usePlayer from './usePlayer'
 import useSettingSync from './useSettingSync'
 import { useRouter } from '@common/utils/vueRouter'
 import handleListAutoUpdate from './listAutoUpdate'
+import { initRecommendRadio, notifyRecommendConfigChanged } from '@renderer/core/recommend/session'
+import { initRecommendProfile } from '@renderer/core/recommend/profile'
+import { createYtmAdapter } from '@renderer/core/recommend/ytmAdapter'
+import { assertPlaybackSupport } from '@renderer/core/music/sourceCapabilities'
 
 
 export default () => {
@@ -39,6 +43,16 @@ export default () => {
   useUpdate()
   useSettingSync()
 
+  // 电台启动恢复（D15）：必须在同步段完成切歌订阅注册，先于下方 getEnvParams().then 里的 initData
+  // （useDataInit 恢复上次播放会经 playList 派发首个 musicToggled，错过注册点首事件就会被吞掉）
+  initRecommendRadio({
+    createYtmAdapter,
+    assertPlaybackSupport,
+    getGlobalProxy: () => proxy,
+  })
+  // 画像常驻订阅（TP-2）：同上的先注册约束——不开电台也累计画像，收藏/听完捕获不能丢首个事件
+  initRecommendProfile()
+
   void getEnvParams().then(envParams => {
     // 移除代理相关的环境变量设置，防止请求库自动应用它们
     // eslint-disable-next-line no-undef
@@ -54,6 +68,7 @@ export default () => {
         host,
         port,
       }
+      notifyRecommendConfigChanged()
     }
 
     void getViewPrevState().then(state => {

@@ -1,0 +1,144 @@
+name: Validate all platforms
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  IS_CI: 'true'
+  CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0 libnss3 libasound2t64 libasound2-plugins pulseaudio fonts-noto-cjk sqlite3
+      - name: Prepare Linux virtual audio output
+        if: runner.os == 'Linux'
+        run: |
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=ci sink_properties=device.description=CI_Audio
+          pactl set-default-sink ci
+          pactl list short sinks
+      - name: Install SQLite CLI (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install sqlite --yes --no-progress --source=https://community.chocolatey.org/api/v2/
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $sqliteBin = Join-Path $env:ChocolateyInstall 'bin'
+          if (-not (Test-Path -LiteralPath (Join-Path $sqliteBin 'sqlite3.exe'))) { throw 'SQLite CLI shim was not installed' }
+          $sqliteBin >> $env:GITHUB_PATH
+      - name: Verify SQLite CLI (all platforms)
+        run: sqlite3 --version
+      - run: npm ci
+      - run: npm run test:ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Profile language after production migration (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node e2e/profileLanguage.js
+      - name: Profile language after production migration (Windows and macOS)
+        if: runner.os != 'Linux'
+        run: node e2e/profileLanguage.js
+      - name: Platform E2E (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:e2e:platform
+      - name: Radio E2E (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:e2e:radio
+      - name: Sync E2E (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:e2e:sync
+      - name: User API E2E (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:e2e:user-api
+      - name: Platform E2E (Windows and macOS)
+        if: runner.os != 'Linux'
+        run: npm run test:e2e:platform
+      - name: Radio E2E (Windows and macOS)
+        if: runner.os != 'Linux'
+        run: npm run test:e2e:radio
+      - name: Sync E2E (Windows and macOS)
+        if: runner.os != 'Linux'
+        run: npm run test:e2e:sync
+      - name: User API E2E (Windows and macOS)
+        if: runner.os != 'Linux'
+        run: npm run test:e2e:user-api
+      - name: Upload Electron failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-diagnostics-${{ runner.os }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/lx-e2e-artifacts
+          if-no-files-found: ignore
+
+  package:
+    name: Package (${{ matrix.target }}, ${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, target: win, arch: x64, type: setup }
+          - { os: windows-latest, target: win, arch: arm64, type: setup }
+          - { os: macos-latest, target: mac, arch: x64, type: dmg }
+          - { os: macos-latest, target: mac, arch: arm64, type: dmg }
+          - { os: ubuntu-latest, target: linux, arch: x64, type: deb }
+          - { os: ubuntu-latest, target: linux, arch: arm64, type: deb, cc: aarch64-linux-gnu-gcc, cxx: aarch64-linux-gnu-g++ }
+          - { os: ubuntu-latest, target: linux, arch: armv7l, type: deb, cc: arm-linux-gnueabihf-gcc, cxx: arm-linux-gnueabihf-g++ }
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Linux cross compilers
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+      - run: npm ci
+      - run: npm run build
+      - name: Select Linux cross compilers
+        if: matrix.target == 'linux' && matrix.arch != 'x64'
+        shell: bash
+        env:
+          TARGET_CC: ${{ matrix.cc }}
+          TARGET_CXX: ${{ matrix.cxx }}
+        run: |
+          test -n "$TARGET_CC" && test -n "$TARGET_CXX"
+          echo "CC=$TARGET_CC" >> "$GITHUB_ENV"
+          echo "CXX=$TARGET_CXX" >> "$GITHUB_ENV"
+      - name: Package without publishing
+        run: node build-config/build-pack.js target=${{ matrix.target }} arch=${{ matrix.arch }} type=${{ matrix.type }} publish=never
+      - name: Verify packaged Electron and SQLite binary architectures
+        run: node e2e/package.check.cjs ${{ matrix.arch }}
+
+  gate:
+    name: All platforms passed
+    needs: [test, package]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject failed, cancelled or skipped validation
+        env:
+          TEST_RESULT: ${{ needs.test.result }}
+          PACKAGE_RESULT: ${{ needs.package.result }}
+        run: test "$TEST_RESULT" = success && test "$PACKAGE_RESULT" = success

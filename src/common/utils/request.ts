@@ -1,4 +1,5 @@
 import qs from 'node:querystring'
+import { formatProxyHost, parseProxyAddress } from './proxyAddress'
 import {
   FormData,
   getGlobalDispatcher,
@@ -30,33 +31,55 @@ const dispatchers = [
 ] as const
 let proxyAgent: ProxyAgent | null = null
 let globalDispatcher = getGlobalDispatcher()
-const buildDispatcher = (redirectDispatcher: Dispatcher.DispatcherComposeInterceptor | null, retryNum = 3) => {
+const buildDispatcher = (redirectDispatcher: Dispatcher.DispatcherComposeInterceptor | null, retryNum = 3): Dispatcher => {
+  const base = proxyAgent ?? globalDispatcher
   const otherInterceptors =
-    retryNum == 3
-      ? dispatchers
-      : [
-          interceptors.retry({
-            maxRetries: retryNum,
-            minTimeout: 1000,
-            maxTimeout: 6000,
-            timeoutFactor: 2,
-            retryAfter: true,
-          }),
-        ]
+    retryNum <= 0
+      ? []
+      : retryNum == 3
+        ? dispatchers
+        : [
+            interceptors.retry({
+              maxRetries: retryNum,
+              minTimeout: 1000,
+              maxTimeout: 6000,
+              timeoutFactor: 2,
+              retryAfter: true,
+            }),
+          ]
   if (redirectDispatcher) {
-    return (proxyAgent ?? globalDispatcher).compose(redirectDispatcher, ...otherInterceptors)
+    return base.compose(redirectDispatcher, ...otherInterceptors)
   }
-  return (proxyAgent ?? globalDispatcher).compose(...otherInterceptors)
+  return otherInterceptors.length ? base.compose(...otherInterceptors) : base
 }
 
 setGlobalDispatcher(buildDispatcher(redirectDispatcher))
 
 export const setProxy = (url?: string) => {
-  proxyAgent = url ? new ProxyAgent(url) : null
+  const previous = proxyAgent
+  let nextAgent: ProxyAgent | null = null
+  if (url) {
+    try {
+      nextAgent = new ProxyAgent(url)
+    } catch (err) {
+      console.warn('[request] ignore invalid proxy url:', err)
+    }
+  }
+  proxyAgent = nextAgent
   setGlobalDispatcher(buildDispatcher(redirectDispatcher))
+  if (previous) void previous.close().catch(() => {})
 }
 export const setProxyByHost = (host?: string, port?: string) => {
-  setProxy(host ? `http://${host}:${port}` : undefined)
+  if (!host) {
+    setProxy(undefined)
+    return
+  }
+  const parsed = parseProxyAddress(host, port) ?? (!String(port ?? '').trim() ? parseProxyAddress(host, 80) : null)
+  if (!parsed) {
+    setProxy(undefined)
+    return
+  }
+  setProxy(`http://${formatProxyHost(parsed.host)}:${parsed.port}`)
 }
 const CONTENT_TYPE = {
   json: 'application/json',
@@ -205,17 +228,19 @@ const buildRequestBody = (options: Options) => {
   return [finalHeaders, body] as const
 }
 
-const buildRequestDispatcher = (options: Options) => {
-  let dispatcher: Dispatcher.ComposedDispatcher | undefined
+// 导出以便单测锁定「仅传 retryNum 也构建独立 dispatcher」的分支行为
+export const buildRequestDispatcher = (options: Options) => {
+  let dispatcher: Dispatcher | undefined
 
-  if (options.maxRedirect != null) {
-    if (options.maxRedirect != defaultOptions.maxRedirect) {
-      if (options.maxRedirect) {
-        dispatcher = buildDispatcher(interceptors.redirect({ maxRedirections: options.maxRedirect }), options.retryNum)
-      } else {
-        dispatcher = buildDispatcher(null, options.retryNum)
-      }
+  if (options.maxRedirect != null && options.maxRedirect != defaultOptions.maxRedirect) {
+    if (options.maxRedirect) {
+      dispatcher = buildDispatcher(interceptors.redirect({ maxRedirections: options.maxRedirect }), options.retryNum)
+    } else {
+      dispatcher = buildDispatcher(null, options.retryNum)
     }
+  } else if (options.retryNum != null) {
+    // 仅传 retryNum（或 maxRedirect 等于默认值）时也构建独立 dispatcher，否则 retryNum 会被全局重试拦截器静默忽略
+    dispatcher = buildDispatcher(redirectDispatcher, options.retryNum)
   }
   return dispatcher
 }

@@ -47,7 +47,7 @@
 </template>
 
 <script>
-import { ref, computed, nextTick } from '@common/utils/vueTools'
+import { ref, computed, nextTick, watch } from '@common/utils/vueTools'
 // import { currentStting } from './setting'
 import { useI18n } from '@renderer/plugins/i18n'
 import { useRoute } from '@common/utils/vueRouter'
@@ -61,6 +61,7 @@ import SettingList from './components/SettingList.vue'
 import SettingDownload from './components/SettingDownload.vue'
 import SettingSync from './components/SettingSync/index.vue'
 import SettingOpenAPI from './components/SettingOpenAPI.vue'
+import SettingAi from './components/SettingAi.vue'
 import SettingHotKey from './components/SettingHotKey.vue'
 import SettingNetwork from './components/SettingNetwork.vue'
 import SettingOdc from './components/SettingOdc.vue'
@@ -81,6 +82,7 @@ export default {
     SettingDownload,
     SettingSync,
     SettingOpenAPI,
+    SettingAi,
     SettingHotKey,
     SettingNetwork,
     SettingOdc,
@@ -107,6 +109,7 @@ export default {
         { id: 'SettingHotKey', title: t('setting__hot_key') },
         { id: 'SettingSync', title: t('setting__sync') },
         { id: 'SettingOpenAPI', title: t('setting__open_api') },
+        { id: 'SettingAi', title: t('setting__ai') },
         { id: 'SettingNetwork', title: t('setting__network') },
         { id: 'SettingOdc', title: t('setting__odc') },
         { id: 'SettingBackup', title: t('setting__backup') },
@@ -119,6 +122,12 @@ export default {
     const avtiveComponentName = ref(route.query.name && tocList.value.some(t => t.id == route.query.name)
       ? route.query.name
       : tocList.value[0].id)
+
+    watch(() => route.query.name, (name) => {
+      if (name && tocList.value.some(t => t.id == name)) {
+        avtiveComponentName.value = name
+      }
+    })
 
     const toggleTab = id => {
       avtiveComponentName.value = id
@@ -182,30 +191,36 @@ export default {
   display: flex;
   flex-flow: row nowrap;
   height: 100%;
-  border-top: var(--color-list-header-border-bottom);
 }
 
 .toc {
-  flex: 0 0 16%;
-  overflow-y: scroll;
+  flex: 0 0 18%;
+  min-width: 156px;
+  overflow-y: auto;
+  padding: 8px;
+  box-sizing: border-box;
+  border-right: 1px solid var(--ui-border-subtle);
 }
 .tocH2 {
   line-height: 1.5;
   .mixin-ellipsis-1();
   font-size: 13px;
   color: var(--color-font);
-  padding: 8px 10px;
-  transition: @transition-fast;
-  transition-property: background-color, color;
+  padding: 8px 12px;
+  margin-bottom: 2px;
+  border-radius: var(--ui-radius-sm);
+  transition: background-color @transition-fast, color @transition-fast;
 
   &:not(.active) {
     cursor: pointer;
     &:hover {
-      background-color: var(--color-button-background-hover);
+      background-color: var(--ui-surface-hover);
     }
   }
   &.active {
     color: var(--color-primary);
+    font-weight: 600;
+    background-color: var(--ui-surface-active);
   }
 }
 .activeIcon {

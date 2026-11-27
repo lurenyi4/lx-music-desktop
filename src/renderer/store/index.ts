@@ -4,6 +4,7 @@ import { appSetting } from './setting'
 import pkg from '../../../package.json'
 import { type ProgressInfo } from 'electron-updater'
 import music from '@renderer/utils/musicSdk'
+import { setYtmRuntimeContext } from '@renderer/utils/musicSdk/ytm/runtimeContext'
 process.versions.app = pkg.version
 
 export const apiSource = ref<string | null>(null)
@@ -16,11 +17,16 @@ export const proxy: {
     host: string
     port: string
   }
-} = {
+} = reactive({
   enable: false,
   host: '',
   port: '',
-}
+})
+
+setYtmRuntimeContext({
+  getAppSetting: () => appSetting,
+  getProxy: () => proxy,
+})
 export const sync: {
   enable: boolean
   mode: LX.AppSetting['sync.mode']
@@ -95,6 +101,7 @@ export const sourceNames = computed(() => {
     kg: 'kg',
     mg: 'mg',
     wy: 'wy',
+    ytm: 'ytm',
     all: window.i18n.t(prefix + 'all' as any),
   }
   for (const { id } of music.sources) {
@@ -131,16 +138,23 @@ export const versionInfo = window.lxData.versionInfo = reactive<{
   status: 'checking',
   downloadProgress: null,
 })
+type UserApiHandler = (...args: any[]) => { promise: Promise<any>, canceleFn: () => void }
+type UserApiHandlers = Partial<Record<'getMusicUrl' | 'getLyric' | 'getPic', UserApiHandler>>
+
 export const userApi = reactive<{
   list: LX.UserApi.UserApiInfo[]
   status: boolean
   message?: string
-  apis: Partial<LX.UserApi.UserApiSources>
+  /** 各音源（apiId）的接口处理器；主源与备源同时在场 */
+  apis: Record<string, Partial<Record<LX.Source, UserApiHandlers>>>
+  /** 各音源（apiId）的可用音质表 */
+  qualityLists: Record<string, LX.QualityList>
 }>({
   list: [],
   status: false,
   message: 'initing',
   apis: {},
+  qualityLists: {},
 })
 
 export const isShowChangeLog = ref(false)

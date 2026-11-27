@@ -3,6 +3,7 @@ import path from 'node:path'
 import { createTaskBarButtons, getWindowSizeInfo } from './utils'
 import { getOSVersion, getPlatform, isLinux, isMac, isWin } from '@common/utils'
 import { getProxy, openDevTools as handleOpenDevTools } from '@main/utils'
+import { formatProxyHost, parseProxyAddress, type ProxyAddress } from '@common/utils/proxyAddress'
 import { mainSend } from '@common/mainIpc'
 import { sendFocus, sendTaskbarButtonClick } from './rendererEvent'
 import { encodePath } from '@common/utils/electron'
@@ -142,27 +143,72 @@ export const closeWindow = () => {
   browserWindow.close()
 }
 
+const YTM_PAC_HOSTS = [
+  'googlevideo.com',
+  'youtube.com',
+  'youtu.be',
+  'ytimg.com',
+  'ggpht.com',
+]
+
+const formatPacAuthority = (addr: ProxyAddress): string => {
+  const safeHost = addr.host.replace(/[^A-Za-z0-9.:-]/g, '')
+  return `${formatProxyHost(safeHost)}:${addr.port}`
+}
+
+const buildYtmPacUrl = (ytmProxy: ProxyAddress, fallbackProxy?: ProxyAddress | null): string => {
+  const checks = [
+    ...YTM_PAC_HOSTS.map(domain => `dnsDomainIs(h, ".${domain}") || h === "${domain}"`),
+    '/^(?:lh\\d+|yt\\d+)\\.googleusercontent\\.com$/.test(h)',
+  ].join(' || ')
+  const fallbackDirective = fallbackProxy ? `PROXY ${formatPacAuthority(fallbackProxy)}` : 'DIRECT'
+  const script = `function FindProxyForURL(url, host) { var h = (host || "").toLowerCase(); if (isPlainHostName(h) || h === "localhost" || h === "127.0.0.1" || h === "::1") { return "DIRECT"; } if (${checks}) { return "PROXY ${formatPacAuthority(ytmProxy)}"; } return "${fallbackDirective}"; }`
+  return `data:application/x-ns-proxy-autoconfig;base64,${Buffer.from(script, 'utf8').toString('base64')}`
+}
+
+const getYtmDedicatedProxy = (): ProxyAddress | null => {
+  if (!global.lx.appSetting['recommend.ytm.proxy.enable']) return null
+  return parseProxyAddress(
+    global.lx.appSetting['recommend.ytm.proxy.host'],
+    global.lx.appSetting['recommend.ytm.proxy.port'],
+  )
+}
+
 const setSesProxy = (ses: Electron.Session, host?: string, port?: string | number) => {
-  if (host) {
+  const onProxyError = (err: unknown) => {
+    console.warn('[winMain] setProxy failed:', err)
+  }
+  const ytmProxy = getYtmDedicatedProxy()
+  const parsedPort = Number(port)
+  const fallbackPort = Number.isInteger(parsedPort) && parsedPort > 0 ? parsedPort : 80
+  const validatedGlobal = host ? parseProxyAddress(host, fallbackPort) : null
+  if (ytmProxy) {
+    void ses.setProxy({
+      mode: 'pac_script',
+      pacScript: buildYtmPacUrl(ytmProxy, validatedGlobal),
+    }).catch(onProxyError)
+    return
+  }
+  if (validatedGlobal) {
     void ses.setProxy({
       mode: 'fixed_servers',
-      proxyRules: `http://${host}:${port}`,
-    })
-  } else {
-    void ses.setProxy({
-      mode: 'direct',
-    })
+      proxyRules: `http://${formatProxyHost(validatedGlobal.host)}:${validatedGlobal.port}`,
+    }).catch(onProxyError)
+    return
   }
+  void ses.setProxy({
+    mode: 'direct',
+  }).catch(onProxyError)
 }
 export const setProxy = () => {
-  if (!browserWindow) return
+  if (!browserWindow || browserWindow.isDestroyed()) return
   const proxy = getProxy()
   setSesProxy(browserWindow.webContents.session, proxy?.host, proxy?.port)
 }
 
 
 export const sendEvent = <T = any>(name: string, params?: T) => {
-  if (!browserWindow) return
+  if (!browserWindow || browserWindow.isDestroyed()) return
   mainSend(browserWindow, name, params)
 }
 
